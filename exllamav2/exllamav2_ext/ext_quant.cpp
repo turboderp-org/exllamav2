@@ -174,10 +174,11 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
 )
 {
     // --- Internal Parameters ---
-    const int redistribution_iterations = 25; 
+    const int redistribution_iterations = 25;
     const float bpw_penalty_scale = 0.01f;
-    const float min_bpw_limit = 2.0f; // Minimum allowed BPW
-    const int opportunistic_iterations = 1000; // Iterations for opportunistic optimization
+    const float min_bpw_limit = 2.0f;
+    const int opportunistic_iterations = 5000;
+    const float bpw_transfer_step = 0.0625f; // Amount of BPW to transfer in each step
 
     // --- Original Simulated Annealing ---
     int num_slots = slots.size();
@@ -334,29 +335,50 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
     }
 
     // --- Opportunistic Optimization ---
+    // Track the best solution found during opportunistic optimization
+    std::vector<std::tuple<uint64_t, float>> best_solution_opportunistic = solution;
+    std::vector<int> best_solution_idx_opportunistic = solution_idx;
+    float best_sum_log_err_opportunistic = 1e18f;
+    uint64_t best_cost_opportunistic = current_cost;
+
     for (int i = 0; i < opportunistic_iterations; ++i) {
-        int slot1 = std::uniform_int_distribution<>(0, num_slots - 1)(gen);
+        auto [bpw_mean, bpw_stddev] = calculate_bpw_stats(solution);
+        float bpw_threshold = std::max(min_bpw_limit, bpw_mean - 0.5f * bpw_stddev);
+
+        int slot1 = -1;
+        // Find a slot with BPW above the threshold
+        std::vector<int> high_bpw_indices;
+        for(int j = 0; j < num_slots; j++) {
+            if(calculate_bpw(solution[j]) > bpw_threshold) {
+                high_bpw_indices.push_back(j);
+            }
+        }
+        if(high_bpw_indices.empty()) continue;
+        slot1 = high_bpw_indices[std::uniform_int_distribution<>(0, high_bpw_indices.size() - 1)(gen)];
+
         int slot2 = std::uniform_int_distribution<>(0, num_slots - 1)(gen);
         if (slot1 == slot2) continue;
 
         int option1 = solution_idx[slot1];
         int option2 = solution_idx[slot2];
 
-        // Try to increase BPW of slot1 and decrease BPW of slot2
+        // Find a lower BPW option for slot1
         int best_option1 = -1;
         float best_option1_error = 1e10f;
-        for(int new_option1 = 0; new_option1 < slots[slot1].size(); new_option1++) {
-            if(calculate_bpw(slots[slot1][new_option1]) > calculate_bpw(solution[slot1])) {
+        for (int new_option1 = 0; new_option1 < slots[slot1].size(); new_option1++) {
+            if (calculate_bpw(slots[slot1][new_option1]) < calculate_bpw(solution[slot1])) {
                 if (std::get<1>(slots[slot1][new_option1]) < best_option1_error) {
                     best_option1_error = std::get<1>(slots[slot1][new_option1]);
                     best_option1 = new_option1;
                 }
             }
         }
+
+        // Find a higher BPW option for slot2
         int best_option2 = -1;
         float best_option2_error = 1e10f;
-        for(int new_option2 = 0; new_option2 < slots[slot2].size(); new_option2++) {
-            if(calculate_bpw(slots[slot2][new_option2]) < calculate_bpw(solution[slot2])) {
+        for (int new_option2 = 0; new_option2 < slots[slot2].size(); new_option2++) {
+            if (calculate_bpw(slots[slot2][new_option2]) > calculate_bpw(solution[slot2])) {
                 if (std::get<1>(slots[slot2][new_option2]) < best_option2_error) {
                     best_option2_error = std::get<1>(slots[slot2][new_option2]);
                     best_option2 = new_option2;
@@ -367,18 +389,18 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
         if (best_option1 != -1 && best_option2 != -1) {
             auto new_option1 = slots[slot1][best_option1];
             auto new_option2 = slots[slot2][best_option2];
-            
-            if(calculate_bpw(new_option1) < min_bpw_limit || calculate_bpw(new_option2) < min_bpw_limit) continue;
+
+            if (calculate_bpw(new_option2) < min_bpw_limit) continue;
 
             uint64_t new_cost = current_cost - std::get<0>(solution[slot1]) - std::get<0>(solution[slot2]) + std::get<0>(new_option1) + std::get<0>(new_option2);
 
             if (new_cost <= max_cost) {
                 // Calculate new max exp error
-                float new_max_exp_error = std::get<1>(new_option1);
-                for(int j = 0; j < num_slots; j++) {
-                    if(j == slot1) continue;
-                    if(j == slot2) {
-                        new_max_exp_error = std::max(new_max_exp_error, std::get<1>(new_option2));
+                float new_max_exp_error = std::get<1>(new_option2);
+                for (int j = 0; j < num_slots; j++) {
+                    if (j == slot2) continue;
+                    if (j == slot1) {
+                        new_max_exp_error = std::max(new_max_exp_error, std::get<1>(new_option1));
                     } else {
                         new_max_exp_error = std::max(new_max_exp_error, std::get<1>(solution[j]));
                     }
@@ -402,17 +424,42 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                     current_sum_log_err += log(std::get<1>(solution[j]));
                 }
 
-                // Accept change if it reduces sum of log errors without increasing max error too much
-                if (new_sum_log_err < current_sum_log_err && new_max_exp_error < current_max_exp_error * 1.05f) {
+                // Accept change if it reduces sum of log errors without increasing max error
+                if (new_sum_log_err < current_sum_log_err && new_max_exp_error <= current_max_exp_error)
+                {
                     solution[slot1] = new_option1;
                     solution_idx[slot1] = best_option1;
                     solution[slot2] = new_option2;
                     solution_idx[slot2] = best_option2;
                     current_cost = new_cost;
                     current_max_exp_error = new_max_exp_error;
+                    current_sum_log_err = new_sum_log_err;
+
+                    // Update best solution found during opportunistic optimization
+                    if (current_sum_log_err < best_sum_log_err_opportunistic) {
+                        best_sum_log_err_opportunistic = current_sum_log_err;
+                        best_cost_opportunistic = current_cost;
+                        best_solution_opportunistic = solution;
+                        best_solution_idx_opportunistic = solution_idx;
+                    }
                 }
             }
         }
+    }
+
+    // Use the best solution found during opportunistic optimization
+    if (best_sum_log_err_opportunistic < 1e18f) {
+        solution = best_solution_opportunistic;
+        solution_idx = best_solution_idx_opportunistic;
+        current_cost = best_cost_opportunistic;
+    }
+
+    // --- Final Cost Check and Rollback (if necessary) ---
+    if (current_cost > max_cost) {
+        // Revert to the solution before opportunistic optimization
+        solution = best_solution_opportunistic;
+        solution_idx = best_solution_idx_opportunistic;
+        current_cost = best_cost_opportunistic;
     }
 
     // Calculate final max error and sum of log errors
