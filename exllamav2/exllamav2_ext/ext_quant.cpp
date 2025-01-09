@@ -174,17 +174,17 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
 )
 {
     // --- Internal Parameters ---
-    const int redistribution_iterations = 25;
-    const float bpw_penalty_scale = 0.1f;  // Further increased BPW penalty
-    const float min_bpw_base = 3.0f;
-    const int opportunistic_iterations = 15000;  // Increased iterations
-    const float initial_opportunistic_temp = 0.05f;  // Higher initial temperature for opportunistic optimization
-    const float low_error_threshold = 0.0009f;
-    const float targeted_redistribution_bpw_threshold = 3.3f;
-    const float targeted_redistribution_max_err_increase_initial = 1.2f;  // Even more initial tolerance for error increase
-    const float targeted_redistribution_max_err_increase_final = 1.02f;
+    const int redistribution_iterations = 50; // Increased
+    const float bpw_penalty_scale = 0.5f;  // Further increased BPW penalty
+    const float min_bpw_base = 3.5f; // Increased baseline
+    const int opportunistic_iterations = 20000;
+    const float initial_opportunistic_temp = 0.05f;
+    const float low_error_threshold = 0.001f;
+    const float targeted_redistribution_bpw_threshold = 3.5f; // Increased threshold
+    const float targeted_redistribution_max_err_increase_initial = 1.1f;
+    const float targeted_redistribution_max_err_increase_final = 1.01f;
     const float high_bpw_donor_threshold = 5.0f;
-    const int num_options_to_explore_per_layer = 3;  // Explore multiple higher-bpw options in targeted redistribution
+    const int num_options_to_explore_per_layer = 8;  // Explore more options
 
     // --- Dynamic Minimum BPW ---
     auto calculate_dynamic_min_bpw = [&](float target_bpw, float temp_ratio) {
@@ -261,8 +261,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
             float bpw_new = calculate_bpw(new_option);
             float bpw_penalty = 0.0f;
             if (bpw_new < min_bpw_limit) {
-                bpw_penalty = (min_bpw_limit - bpw_new) * bpw_penalty_scale * (1 + temp_ratio);
-                bpw_penalty = bpw_penalty * bpw_penalty;  // Exponential penalty
+                bpw_penalty = powf((min_bpw_limit - bpw_new), 2.0f) * bpw_penalty_scale * (1 + temp_ratio);
             }
 
             if (current_cost + delta_cost <= max_cost || (delta_cost < 0 && current_cost > max_cost))
@@ -359,9 +358,9 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
 
                     auto [current_bpw_mean, current_bpw_stddev] = calculate_bpw_stats(solution);
                     auto [new_bpw_mean, new_bpw_stddev] = calculate_bpw_stats({new_low_option, new_high_option});
-                    float bpw_penalty = bpw_penalty_scale * (new_bpw_stddev - current_bpw_stddev);
+                    float bpw_change_penalty = bpw_penalty_scale * std::max(0.0f, new_bpw_stddev - current_bpw_stddev); // Penalize increased variance
 
-                    if (new_max_exp_error + bpw_penalty < current_max_exp_error) {
+                    if (new_max_exp_error + bpw_change_penalty < current_max_exp_error) {
                         solution[low_idx] = new_low_option;
                         solution_idx[low_idx] = best_low_new_idx;
                         solution[high_idx] = new_high_option;
@@ -467,15 +466,12 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
 
         // Introduce a small probability of accepting a worse solution (simulated annealing-like)
         if (new_cost <= max_cost) {
-            if (delta_sum_log_err * error_factor < 0 || std::uniform_real_distribution<>(0, 1)(gen) < std::exp(-delta_sum_log_err * error_factor / local_temp)) {
+            float bpw_penalty_opp = 0.0f;
+            if (calculate_bpw(new_solution[target_slot]) < min_bpw_limit) {
+                bpw_penalty_opp = powf((min_bpw_limit - calculate_bpw(new_solution[target_slot])), 2.0f) * bpw_penalty_scale * (1 + temp_ratio);
+            }
+            if (delta_sum_log_err * error_factor + bpw_penalty_opp < 0 || std::uniform_real_distribution<>(0, 1)(gen) < std::exp(-(delta_sum_log_err * error_factor + bpw_penalty_opp) / local_temp)) {
                 accept = true;
-                // Further penalize if below min_bpw_limit
-                for (int j = 0; j < num_slots; ++j) {
-                    if (calculate_bpw(new_solution[j]) < min_bpw_limit) {
-                        accept = false;
-                        break;
-                    }
-                }
             }
         }
 
@@ -538,7 +534,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
     }
 
     // --- Targeted Bit Redistribution (Post-processing) ---
-    for (int iter = 0; iter < num_slots * 2; ++iter) { // Increased passes
+    for (int iter = 0; iter < num_slots * 3; ++iter) {
         // Create a global pool of donor indices
         std::vector<int> donor_indices;
         for (int j = 0; j < num_slots; ++j) {
@@ -602,7 +598,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                             // Adaptive max_err_increase
                             float max_err_increase = targeted_redistribution_max_err_increase_initial -
                                                     (targeted_redistribution_max_err_increase_initial - targeted_redistribution_max_err_increase_final) *
-                                                    (static_cast<float>(iter) / (num_slots * 2));
+                                                    (static_cast<float>(iter) / (num_slots * 3));
 
                             if (new_max_err < current_max_exp_error * max_err_increase) {
                                 current_cost = new_cost;
