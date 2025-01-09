@@ -175,11 +175,16 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
 {
     // --- Internal Parameters ---
     const int redistribution_iterations = 25;
-    const float bpw_penalty_scale = 0.05f; // Increased penalty
-    const float min_bpw_base = 2.8f; // Absolute minimum BPW
-    const int opportunistic_iterations = 10000;
-    const float initial_opportunistic_temp = 0.01f;
+    const float bpw_penalty_scale = 0.1f;  // Further increased BPW penalty
+    const float min_bpw_base = 3.0f;
+    const int opportunistic_iterations = 15000;  // Increased iterations
+    const float initial_opportunistic_temp = 0.05f;  // Higher initial temperature for opportunistic optimization
     const float low_error_threshold = 0.0009f;
+    const float targeted_redistribution_bpw_threshold = 3.3f;
+    const float targeted_redistribution_max_err_increase_initial = 1.2f;  // Even more initial tolerance for error increase
+    const float targeted_redistribution_max_err_increase_final = 1.02f;
+    const float high_bpw_donor_threshold = 5.0f;
+    const int num_options_to_explore_per_layer = 3;  // Explore multiple higher-bpw options in targeted redistribution
 
     // --- Dynamic Minimum BPW ---
     auto calculate_dynamic_min_bpw = [&](float target_bpw, float temp_ratio) {
@@ -216,7 +221,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
     uint64_t current_cost = 0;
     float current_max_exp_error = 0;
 
-    float temp = initial_temp;
+    float temp = initial_temp * 2;  // Higher initial temperature
     int iterations_outer = static_cast<int>(std::log(min_temp / temp) / std::log(cooling_factor));
     float target_bpw = max_cost * 8.0f / 1024.0f / num_slots;
 
@@ -229,7 +234,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
 
     for (int j = 0; j < iterations_outer; ++j)
     {
-        float temp_ratio = temp / initial_temp;
+        float temp_ratio = temp / (initial_temp * 2);
         float min_bpw_limit = calculate_dynamic_min_bpw(target_bpw, temp_ratio);
 
         for (int k = 0; k < iterations; ++k)
@@ -252,12 +257,12 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                 new_max_exp_error = std::max(current_max_exp_error, std::get<1>(new_option));
             }
 
-            // BPW Penalty (Dynamic and Temperature-Dependent)
+            // BPW Penalty (Dynamic, Temperature-Dependent, and Non-Linear)
             float bpw_new = calculate_bpw(new_option);
             float bpw_penalty = 0.0f;
-
             if (bpw_new < min_bpw_limit) {
-                bpw_penalty = (min_bpw_limit - bpw_new) * bpw_penalty_scale * (1 + temp_ratio); // Stronger penalty at higher temp
+                bpw_penalty = (min_bpw_limit - bpw_new) * bpw_penalty_scale * (1 + temp_ratio);
+                bpw_penalty = bpw_penalty * bpw_penalty;  // Exponential penalty
             }
 
             if (current_cost + delta_cost <= max_cost || (delta_cost < 0 && current_cost > max_cost))
@@ -278,7 +283,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
     // --- Post-processing: Bit Redistribution ---
 
     for (int r = 0; r < redistribution_iterations; ++r) {
-        float temp_ratio = temp / initial_temp;
+        float temp_ratio = temp / (initial_temp * 2);
         float min_bpw_limit = calculate_dynamic_min_bpw(target_bpw, temp_ratio);
 
         // Calculate BPW statistics and dynamic bpw_threshold
@@ -379,74 +384,66 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
     float best_sum_log_err = current_sum_log_err;
     std::vector<std::tuple<uint64_t, float>> best_solution = solution;
     std::vector<int> best_solution_idx = solution_idx;
-
     float local_temp = initial_opportunistic_temp;
+
     for (int i = 0; i < opportunistic_iterations; ++i) {
-        float temp_ratio = temp / initial_temp;
+        float temp_ratio = temp / (initial_temp * 2);
         float min_bpw_limit = calculate_dynamic_min_bpw(target_bpw, temp_ratio);
 
-        // Select a neighborhood of slots
-        int center_slot = std::uniform_int_distribution<>(0, num_slots - 1)(gen);
-        int neighborhood_size = std::min(5, num_slots); // Example neighborhood size
-        int start_slot = std::max(0, center_slot - neighborhood_size / 2);
-        int end_slot = std::min(num_slots - 1, center_slot + neighborhood_size / 2);
+        // Select a slot to adjust
+        int target_slot = std::uniform_int_distribution<>(0, num_slots - 1)(gen);
 
-        // Calculate average BPW in the neighborhood
-        float neighborhood_bpw_sum = 0;
-        for (int j = start_slot; j <= end_slot; ++j) {
-            neighborhood_bpw_sum += calculate_bpw(solution[j]);
+        // Calculate the global average BPW
+        float global_bpw_sum = 0;
+        for (int j = 0; j < num_slots; ++j) {
+            global_bpw_sum += calculate_bpw(solution[j]);
         }
-        float neighborhood_bpw_avg = neighborhood_bpw_sum / (end_slot - start_slot + 1);
+        float global_bpw_avg = global_bpw_sum / num_slots;
 
-        // Adjust BPWs within the neighborhood
+        // Adjust BPW of the target slot
         std::vector<std::tuple<uint64_t, float>> new_solution = solution;
         std::vector<int> new_solution_idx = solution_idx;
         float new_sum_log_err = current_sum_log_err;
         uint64_t new_cost = current_cost;
 
-        for (int j = start_slot; j <= end_slot; ++j) {
-            float current_bpw = calculate_bpw(solution[j]);
-            float target_bpw = neighborhood_bpw_avg;
+        float current_bpw = calculate_bpw(solution[target_slot]);
 
-            // Error-weighted adjustment with bias towards higher BPW
-            float avg_error = 0;
-            for (int k = start_slot; k <= end_slot; ++k) {
-                avg_error += std::get<1>(solution[k]);
-            }
-            avg_error /= (end_slot - start_slot + 1);
-            float error_ratio = std::get<1>(solution[j]) / avg_error;
+        // Adjust BPW towards the global average, weighted by error
+        float avg_error = 0;
+        for (int k = 0; k < num_slots; ++k) {
+            avg_error += std::get<1>(solution[k]);
+        }
+        avg_error /= num_slots;
+        float error_ratio = std::get<1>(solution[target_slot]) / avg_error;
 
-            float adjustment = 0.25f + 0.25f * error_ratio; // Increased adjustment with bias
+        float adjustment = 0.25f + 0.25f * error_ratio;
 
-            // Adjust BPW towards the target, weighted by error, with a bias towards higher BPW
-            if (current_bpw < target_bpw + adjustment) { // Bias towards higher BPW
-                // Search for a higher BPW option
-                for (int n = 0; n < slots[j].size(); ++n) {
-                    auto new_option = slots[j][n];
-                    if (calculate_bpw(new_option) > current_bpw && calculate_bpw(new_option) <= current_bpw + adjustment) {
-                        if (new_cost - std::get<0>(solution[j]) + std::get<0>(new_option) <= max_cost)
-                         {
-                            new_cost = new_cost - std::get<0>(solution[j]) + std::get<0>(new_option);
-                            new_sum_log_err = new_sum_log_err - log(std::get<1>(solution[j])) + log(std::get<1>(new_option));
-                            new_solution[j] = new_option;
-                            new_solution_idx[j] = n;
-                            break;
-                        }
+        // Adjust BPW towards the target, weighted by error, with a bias towards higher BPW
+        if (current_bpw < global_bpw_avg + adjustment) {
+            // Search for a higher BPW option
+            for (int n = 0; n < slots[target_slot].size(); ++n) {
+                auto new_option = slots[target_slot][n];
+                if (calculate_bpw(new_option) > current_bpw && calculate_bpw(new_option) <= current_bpw + adjustment) {
+                    if (new_cost - std::get<0>(solution[target_slot]) + std::get<0>(new_option) <= max_cost) {
+                        new_cost = new_cost - std::get<0>(solution[target_slot]) + std::get<0>(new_option);
+                        new_sum_log_err = new_sum_log_err - log(std::get<1>(solution[target_slot])) + log(std::get<1>(new_option));
+                        new_solution[target_slot] = new_option;
+                        new_solution_idx[target_slot] = n;
+                        break;
                     }
                 }
-            } else if (current_bpw > target_bpw) {
-                // Search for a lower BPW option
-                for (int n = slots[j].size() - 1; n >= 0; --n) { // Iterate in reverse order
-                    auto new_option = slots[j][n];
-                    if (calculate_bpw(new_option) < current_bpw && calculate_bpw(new_option) >= current_bpw - adjustment) {
-                        if (new_cost - std::get<0>(solution[j]) + std::get<0>(new_option) <= max_cost)
-                         {
-                            new_cost = new_cost - std::get<0>(solution[j]) + std::get<0>(new_option);
-                            new_sum_log_err = new_sum_log_err - log(std::get<1>(solution[j])) + log(std::get<1>(new_option));
-                            new_solution[j] = new_option;
-                            new_solution_idx[j] = n;
-                            break;
-                        }
+            }
+        } else if (current_bpw > global_bpw_avg) {
+            // Search for a lower BPW option
+            for (int n = slots[target_slot].size() - 1; n >= 0; --n) {
+                auto new_option = slots[target_slot][n];
+                if (calculate_bpw(new_option) < current_bpw && calculate_bpw(new_option) >= current_bpw - adjustment) {
+                    if (new_cost - std::get<0>(solution[target_slot]) + std::get<0>(new_option) <= max_cost) {
+                        new_cost = new_cost - std::get<0>(solution[target_slot]) + std::get<0>(new_option);
+                        new_sum_log_err = new_sum_log_err - log(std::get<1>(solution[target_slot])) + log(std::get<1>(new_option));
+                        new_solution[target_slot] = new_option;
+                        new_solution_idx[target_slot] = n;
+                        break;
                     }
                 }
             }
@@ -465,9 +462,10 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
         // Dampen penalty for low errors
         float error_factor = 1.0f;
         if (current_max_exp_error < low_error_threshold) {
-            error_factor = 0.1f; // Reduce the weight of sum_log_err
+            error_factor = 0.1f;
         }
 
+        // Introduce a small probability of accepting a worse solution (simulated annealing-like)
         if (new_cost <= max_cost) {
             if (delta_sum_log_err * error_factor < 0 || std::uniform_real_distribution<>(0, 1)(gen) < std::exp(-delta_sum_log_err * error_factor / local_temp)) {
                 accept = true;
@@ -539,20 +537,105 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
         }
     }
 
+    // --- Targeted Bit Redistribution (Post-processing) ---
+    for (int iter = 0; iter < num_slots * 2; ++iter) { // Increased passes
+        // Create a global pool of donor indices
+        std::vector<int> donor_indices;
+        for (int j = 0; j < num_slots; ++j) {
+            if (calculate_bpw(solution[j]) > high_bpw_donor_threshold) {
+                donor_indices.push_back(j);
+            }
+        }
+
+        if (donor_indices.empty()) continue; // Skip if no donors
+
+        for (int i = 0; i < num_slots; ++i) {
+            float current_bpw = calculate_bpw(solution[i]);
+            if (current_bpw < targeted_redistribution_bpw_threshold) {
+                // Randomly select a donor from the global pool
+                int donor_idx = donor_indices[std::uniform_int_distribution<>(0, donor_indices.size() - 1)(gen)];
+
+                // Explore multiple higher BPW options for the current slot
+                std::vector<int> higher_bpw_options;
+                for (int n = 0; n < slots[i].size(); ++n) {
+                    if (calculate_bpw(slots[i][n]) > current_bpw && calculate_bpw(slots[i][n]) >= targeted_redistribution_bpw_threshold) {
+                        higher_bpw_options.push_back(n);
+                    }
+                }
+
+                std::shuffle(higher_bpw_options.begin(), higher_bpw_options.end(), gen);
+                int options_to_explore = std::min((int)higher_bpw_options.size(), num_options_to_explore_per_layer);
+
+                for (int option_idx = 0; option_idx < options_to_explore; ++option_idx) {
+                    int best_new_idx = higher_bpw_options[option_idx];
+                    auto new_option = slots[i][best_new_idx];
+
+                    // Find a lower BPW option for the donor slot
+                    int best_donor_new_idx = -1;
+                    float best_donor_new_error = 1e10f;
+                    for (int n = 0; n < slots[donor_idx].size(); ++n) {
+                        if (calculate_bpw(slots[donor_idx][n]) < calculate_bpw(solution[donor_idx])) {
+                            float error_factor = 1.0f + std::get<1>(slots[donor_idx][n]);
+                            if (error_factor * std::get<1>(slots[donor_idx][n]) < best_donor_new_error) {
+                                best_donor_new_error = error_factor * std::get<1>(slots[donor_idx][n]);
+                                best_donor_new_idx = n;
+                            }
+                        }
+                    }
+
+                    if (best_donor_new_idx != -1) {
+                        auto donor_new_option = slots[donor_idx][best_donor_new_idx];
+                        uint64_t new_cost = current_cost - std::get<0>(solution[i]) - std::get<0>(solution[donor_idx])
+                                            + std::get<0>(new_option) + std::get<0>(donor_new_option);
+
+                        if (new_cost <= max_cost) {
+                            float new_max_err = std::get<1>(new_option);
+                            for (int j = 0; j < num_slots; ++j) {
+                                if (j == i) continue;
+                                if (j == donor_idx) {
+                                    new_max_err = std::max(new_max_err, std::get<1>(donor_new_option));
+                                } else {
+                                    new_max_err = std::max(new_max_err, std::get<1>(solution[j]));
+                                }
+                            }
+
+                            // Adaptive max_err_increase
+                            float max_err_increase = targeted_redistribution_max_err_increase_initial -
+                                                    (targeted_redistribution_max_err_increase_initial - targeted_redistribution_max_err_increase_final) *
+                                                    (static_cast<float>(iter) / (num_slots * 2));
+
+                            if (new_max_err < current_max_exp_error * max_err_increase) {
+                                current_cost = new_cost;
+                                solution[i] = new_option;
+                                solution_idx[i] = best_new_idx;
+                                solution[donor_idx] = donor_new_option;
+                                solution_idx[donor_idx] = best_donor_new_idx;
+                                current_max_exp_error = new_max_err;
+                                break; // Move to the next low-bpw layer after a successful redistribution
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // --- Final Cost Check and Rollback (if necessary) ---
     if (current_cost > max_cost) {
-        std::vector<std::pair<float, int>> error_indices(num_slots);
+        std::vector<std::tuple<float, float, int>> bpw_error_indices(num_slots);
         for (int i = 0; i < num_slots; ++i) {
-            error_indices[i] = {std::get<1>(solution[i]), i};
+            float bpw = calculate_bpw(solution[i]);
+            float error = std::get<1>(solution[i]);
+            float penalty = (bpw < targeted_redistribution_bpw_threshold) ? 1000.0f : 0.0f; // High penalty for low BPW
+            bpw_error_indices[i] = {error + penalty, bpw, i};
         }
-        std::sort(error_indices.begin(), error_indices.end());
+        std::sort(bpw_error_indices.begin(), bpw_error_indices.end(), std::greater<std::tuple<float, float, int>>());
 
-        for (const auto& pair : error_indices) {
-            int i = pair.second;
+        for (const auto& tuple : bpw_error_indices) {
+            int i = std::get<2>(tuple);
             for (int n = slots[i].size() - 1; n >= 0; --n) {
                 if (calculate_bpw(slots[i][n]) < calculate_bpw(solution[i])) {
-                    if (current_cost - std::get<0>(solution[i]) + std::get<0>(slots[i][n]) <= max_cost)
-                     {
+                    if (current_cost - std::get<0>(solution[i]) + std::get<0>(slots[i][n]) <= max_cost) {
                         uint64_t delta_cost = std::get<0>(slots[i][n]) - std::get<0>(solution[i]);
                         current_cost += delta_cost;
                         solution[i] = slots[i][n];
