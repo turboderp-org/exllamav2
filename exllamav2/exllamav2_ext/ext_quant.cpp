@@ -174,20 +174,21 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
 )
 {
     // --- Enhanced Parameters ---
-    const int redistribution_iterations = 50; // Increased iterations for more thorough redistribution
-    const float bpw_penalty_scale = 0.5f; // Stronger penalty for low BPW
-    const float min_bpw_base = 3.5f; // Base minimum BPW
-    const int opportunistic_iterations = 30000; // More iterations for opportunistic optimization
-    const float initial_opportunistic_temp = 0.1f; // Higher initial temperature
-    const float low_error_threshold = 0.001f;
-    const float error_floor = 0.0001f; // Minimum acceptable error
-    const float targeted_redistribution_bpw_threshold = 3.5f; // Higher threshold for targeted redistribution
-    const float targeted_redistribution_max_err_increase_initial = 1.3f; // More initial tolerance for error increase in targeted redistribution
-    const float targeted_redistribution_max_err_increase_final = 1.05f; // Tighter final tolerance
-    const float high_bpw_donor_threshold = 5.5f; // Threshold for identifying high-BPW donor layers
-    const int num_options_to_explore_per_layer = 8; // Explore more options in targeted redistribution
-    const int bpw_smoothing_passes = 5; // Multiple passes for BPW smoothing
-    const float bpw_smoothing_threshold = 0.75f; // Larger difference for triggering BPW smoothing
+    const int redistribution_iterations = 50;
+    const float bpw_penalty_scale = 0.6f; // Stronger penalty for low BPW
+    const float min_bpw_base = 3.3f; // Higher base minimum BPW, we want higher bpw
+    const int opportunistic_iterations = 30000;
+    const float initial_opportunistic_temp = 0.12f;
+    const float low_error_threshold = 0.002f;
+    const float error_floor = 0.0005f;
+    const float targeted_redistribution_bpw_threshold = 3.6f;
+    const float targeted_redistribution_max_err_increase_initial = 1.5f; // Increased initial tolerance
+    const float targeted_redistribution_max_err_increase_final = 1.1f; // Slightly increased final tolerance
+    const float high_bpw_donor_threshold = 5.5f;
+    const int num_options_to_explore_per_layer = 8;
+    const int bpw_smoothing_passes = 8;
+    const float bpw_smoothing_threshold = 0.75f;
+    const float bpw_uniformity_factor = 1.8f; // Control trade-off between BPW uniformity and error, higher value will make bpw more uniform
 
     // --- Dynamic Minimum BPW ---
     auto calculate_dynamic_min_bpw = [&](float target_bpw, float temp_ratio) {
@@ -224,22 +225,22 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
     uint64_t current_cost = 0;
     float current_max_exp_error = 0;
 
-    float temp = initial_temp * 2.5f; // Higher initial temperature
+    float temp = initial_temp * 2.5f;
     int iterations_outer = static_cast<int>(std::log(min_temp / temp) / std::log(cooling_factor));
     float target_bpw = max_cost * 8.0f / 1024.0f / num_slots;
 
-    // --- Initialization (favor higher BPW options) ---
+    // --- Balanced Initialization ---
     for (int i = 0; i < num_slots; ++i) {
         int best_idx = 0;
-        float best_bpw_diff = 1e10f;
+        float best_score = -1e10f; // Lower score is better
         for (int j = 0; j < slots[i].size(); ++j) {
             float bpw = calculate_bpw(slots[i][j]);
-            if (bpw >= target_bpw) {
-                float bpw_diff = bpw - target_bpw;
-                if (bpw_diff < best_bpw_diff) {
-                    best_bpw_diff = bpw_diff;
-                    best_idx = j;
-                }
+            float error = std::get<1>(slots[i][j]);
+            // Favor options with BPW close to target and relatively high error
+            float score = -std::abs(bpw - target_bpw) + error * bpw_uniformity_factor;
+            if (score > best_score) {
+                best_score = score;
+                best_idx = j;
             }
         }
         solution[i] = slots[i][best_idx];
@@ -270,12 +271,14 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                 new_max_exp_error = std::max(current_max_exp_error, std::get<1>(new_option));
             }
 
-            // Enhanced BPW Penalty (Dynamic, Temperature-Dependent, and Non-Linear)
+            // Enhanced Layer-Specific BPW Penalty
             float bpw_new = calculate_bpw(new_option);
             float bpw_penalty = 0.0f;
             if (bpw_new < min_bpw_limit) {
-                bpw_penalty = (min_bpw_limit - bpw_new) * bpw_penalty_scale * (1 + temp_ratio * 2); // Stronger temperature scaling
-                bpw_penalty = bpw_penalty * bpw_penalty * bpw_penalty; // Cubic penalty for more aggressive discouragement
+                // Stronger penalty for earlier layers
+                float layer_penalty_factor = std::max(0.0f, 1.0f - static_cast<float>(i) / num_slots);
+                bpw_penalty = (min_bpw_limit - bpw_new) * bpw_penalty_scale * (1 + temp_ratio * 2) * (1 + layer_penalty_factor * bpw_uniformity_factor);
+                bpw_penalty = bpw_penalty * bpw_penalty * bpw_penalty;
             }
 
             if (current_cost + delta_cost <= max_cost || (delta_cost < 0 && current_cost > max_cost)) {
@@ -291,24 +294,35 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
         temp *= cooling_factor;
     }
 
-    // --- Enhanced Bit Redistribution ---
+    // --- Enhanced Bit Redistribution with Early Layer Prioritization ---
     for (int r = 0; r < redistribution_iterations; ++r) {
         float temp_ratio = temp / (initial_temp * 2.5f);
         float min_bpw_limit = calculate_dynamic_min_bpw(target_bpw, temp_ratio);
 
         // Calculate BPW statistics and dynamic bpw_threshold
         auto [bpw_mean, bpw_stddev] = calculate_bpw_stats(solution);
-        float bpw_threshold = std::max(min_bpw_limit, bpw_mean - bpw_stddev); // More dynamic threshold
+        float bpw_threshold = std::max(min_bpw_limit, bpw_mean - bpw_stddev);
 
         std::vector<int> low_bpw_indices;
         std::vector<int> high_bpw_indices;
         std::vector<float> high_bpw_errors;
 
+        // Prioritize early layers
+        for (int i = 0; i < num_slots / 2; ++i) {
+            if (calculate_bpw(solution[i]) < bpw_threshold) {
+                low_bpw_indices.push_back(i);
+            }
+        }
+        // Then consider other layers
+        for (int i = num_slots / 2; i < num_slots; ++i) {
+            if (calculate_bpw(solution[i]) < bpw_threshold) {
+                low_bpw_indices.push_back(i);
+            }
+        }
+
         for (int i = 0; i < num_slots; ++i) {
             float bpw = calculate_bpw(solution[i]);
-            if (bpw < bpw_threshold) {
-                low_bpw_indices.push_back(i);
-            } else if (bpw > high_bpw_donor_threshold) {
+            if (bpw > high_bpw_donor_threshold) {
                 high_bpw_indices.push_back(i);
                 high_bpw_errors.push_back(std::get<1>(solution[i]));
             }
@@ -316,14 +330,13 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
 
         if (high_bpw_indices.empty()) continue;
 
-        // Error-weighted selection of high_idx (donor) with a bias towards lower error
         std::discrete_distribution<int> high_idx_dist(high_bpw_errors.begin(), high_bpw_errors.end());
 
         bool improved = false;
         for (int low_idx : low_bpw_indices) {
             int high_idx = high_bpw_indices[high_idx_dist(gen)];
 
-            // Find a higher BPW option for the low-BPW slot, with bias towards lower error
+            // Find a higher BPW option for the low-BPW slot
             int best_low_new_idx = -1;
             float best_low_new_error = 1e10f;
             for (int n = 0; n < slots[low_idx].size(); ++n) {
@@ -336,7 +349,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                 }
             }
 
-            // Find a lower BPW option for the high-BPW slot, with bias towards lower error
+            // Find a lower BPW option for the high-BPW slot
             int best_high_new_idx = -1;
             float best_high_new_error = 1e10f;
             for (int n = 0; n < slots[high_idx].size(); ++n) {
@@ -366,14 +379,17 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                         }
                     }
 
-                    // Consider error floor
                     if (std::get<1>(new_low_option) < error_floor || std::get<1>(new_high_option) < error_floor) continue;
 
                     auto [current_bpw_mean, current_bpw_stddev] = calculate_bpw_stats(solution);
                     auto [new_bpw_mean, new_bpw_stddev] = calculate_bpw_stats({new_low_option, new_high_option});
-                    float bpw_penalty = bpw_penalty_scale * (new_bpw_stddev - current_bpw_stddev) * (1 + temp_ratio);
+                    // Penalty is less relevant here, we are aiming for higher bpw for the low bpw layers anyway
+                    // float bpw_penalty = bpw_penalty_scale * (new_bpw_stddev - current_bpw_stddev) * (1 + temp_ratio);
 
-                    if (new_max_exp_error + bpw_penalty < current_max_exp_error) {
+                    // Relaxed max_err constraint for early layers
+                    float max_err_increase = (low_idx < num_slots / 2) ? 1.0f + (targeted_redistribution_max_err_increase_initial - 1.0f) * bpw_uniformity_factor : targeted_redistribution_max_err_increase_initial;
+
+                    if (new_max_exp_error < current_max_exp_error * max_err_increase) {
                         solution[low_idx] = new_low_option;
                         solution_idx[low_idx] = best_low_new_idx;
                         solution[high_idx] = new_high_option;
@@ -481,14 +497,12 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
         // Dampen penalty for low errors, but less aggressively
         float error_factor = 1.0f;
         if (current_max_exp_error < low_error_threshold) {
-            error_factor = 0.25f; // Less dampening
+            error_factor = 0.25f;
         }
 
-        // Introduce a probability of accepting a worse solution (simulated annealing-like)
         if (new_cost <= max_cost) {
             if (delta_sum_log_err * error_factor < 0 || std::uniform_real_distribution<>(0, 1)(gen) < std::exp(-delta_sum_log_err * error_factor / local_temp)) {
                 accept = true;
-                // Further penalize if below min_bpw_limit, more aggressively
                 for (int j = 0; j < num_slots; ++j) {
                     if (calculate_bpw(new_solution[j]) < min_bpw_limit) {
                         accept = false;
@@ -512,7 +526,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
             }
         }
 
-        local_temp *= 0.95f; // Faster cooling
+        local_temp *= 0.95f;
     }
 
     // Use the best solution found during opportunistic optimization
@@ -528,13 +542,12 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
             float next_bpw = calculate_bpw(solution[i + 1]);
             float avg_neighbor_bpw = (prev_bpw + next_bpw) / 2.0f;
 
-            if (current_bpw < avg_neighbor_bpw - bpw_smoothing_threshold) { // Larger difference
+            if (current_bpw < avg_neighbor_bpw - bpw_smoothing_threshold) {
                 // Find a higher BPW option for the current slot
                 for (int n = 0; n < slots[i].size(); ++n) {
                     auto new_option = slots[i][n];
                     if (calculate_bpw(new_option) > current_bpw && calculate_bpw(new_option) <= avg_neighbor_bpw) {
                         if (current_cost - std::get<0>(solution[i]) + std::get<0>(new_option) <= max_cost) {
-                            // Check if the new option doesn't significantly increase max_err and is not below error floor
                             if (std::get<1>(new_option) < error_floor) continue;
                             float new_max_err = 0;
                             for (int j = 0; j < num_slots; ++j) {
@@ -545,7 +558,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                                 }
                             }
 
-                            if (new_max_err < current_max_exp_error * 1.2f) { // Allow a larger increase in max_err
+                            if (new_max_err < current_max_exp_error * 1.2f) {
                                 current_cost = current_cost - std::get<0>(solution[i]) + std::get<0>(new_option);
                                 solution[i] = new_option;
                                 solution_idx[i] = n;
@@ -560,8 +573,8 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
     }
 
     // --- Enhanced Targeted Bit Redistribution (Post-processing) ---
-    for (int iter = 0; iter < num_slots * 3; ++iter) { // Increased passes
-        // Create a global pool of donor indices, considering both high BPW and relatively low error
+    for (int iter = 0; iter < num_slots * 3; ++iter) {
+        // Create a global pool of donor indices
         std::vector<int> donor_indices;
         std::vector<float> donor_errors;
         for (int j = 0; j < num_slots; ++j) {
@@ -571,18 +584,15 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
             }
         }
 
-        if (donor_indices.empty()) continue; // Skip if no suitable donors
+        if (donor_indices.empty()) continue;
 
-        // Error-weighted selection of donor
         std::discrete_distribution<int> donor_dist(donor_errors.begin(), donor_errors.end());
 
         for (int i = 0; i < num_slots; ++i) {
             float current_bpw = calculate_bpw(solution[i]);
             if (current_bpw < targeted_redistribution_bpw_threshold) {
-                // Randomly select a donor from the global pool, weighted by error
                 int donor_idx = donor_indices[donor_dist(gen)];
 
-                // Explore multiple higher BPW options for the current slot
                 std::vector<int> higher_bpw_options;
                 for (int n = 0; n < slots[i].size(); ++n) {
                     if (calculate_bpw(slots[i][n]) > current_bpw) {
@@ -597,10 +607,8 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                     int best_new_idx = higher_bpw_options[option_idx];
                     auto new_option = slots[i][best_new_idx];
 
-                    // Consider error floor
                     if (std::get<1>(new_option) < error_floor) continue;
 
-                    // Find a lower BPW option for the donor slot, with bias towards lower error
                     int best_donor_new_idx = -1;
                     float best_donor_new_error = 1e10f;
                     for (int n = 0; n < slots[donor_idx].size(); ++n) {
@@ -615,7 +623,6 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                     if (best_donor_new_idx != -1) {
                         auto donor_new_option = slots[donor_idx][best_donor_new_idx];
 
-                        // Consider error floor
                         if (std::get<1>(donor_new_option) < error_floor) continue;
 
                         uint64_t new_cost = current_cost - std::get<0>(solution[i]) - std::get<0>(solution[donor_idx])
@@ -632,10 +639,14 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                                 }
                             }
 
-                            // Adaptive max_err_increase based on iteration number
                             float max_err_increase = targeted_redistribution_max_err_increase_initial -
                                                     (targeted_redistribution_max_err_increase_initial - targeted_redistribution_max_err_increase_final) *
                                                     (static_cast<float>(iter) / (num_slots * 3));
+
+                            // Relaxed constraint for early layers
+                            if (i < num_slots / 2) {
+                                max_err_increase *= bpw_uniformity_factor;
+                            }
 
                             if (new_max_err < current_max_exp_error * max_err_increase) {
                                 current_cost = new_cost;
@@ -644,7 +655,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
                                 solution[donor_idx] = donor_new_option;
                                 solution_idx[donor_idx] = best_donor_new_idx;
                                 current_max_exp_error = new_max_err;
-                                break; // Move to the next low-bpw layer after a successful redistribution
+                                break;
                             }
                         }
                     }
@@ -659,7 +670,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
         for (int i = 0; i < num_slots; ++i) {
             float bpw = calculate_bpw(solution[i]);
             float error = std::get<1>(solution[i]);
-            float penalty = (bpw < targeted_redistribution_bpw_threshold) ? 1000.0f : 0.0f; // High penalty for low BPW
+            float penalty = (bpw < targeted_redistribution_bpw_threshold) ? 1000.0f : 0.0f;
             bpw_error_indices[i] = {error + penalty, bpw, i};
         }
         std::sort(bpw_error_indices.begin(), bpw_error_indices.end(), std::greater<std::tuple<float, float, int>>());
@@ -668,7 +679,7 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
             int i = std::get<2>(tuple);
             for (int n = slots[i].size() - 1; n >= 0; --n) {
                 if (calculate_bpw(slots[i][n]) < calculate_bpw(solution[i])) {
-if (current_cost - std::get<0>(solution[i]) + std::get<0>(slots[i][n]) <= max_cost) {
+                    if (current_cost - std::get<0>(solution[i]) + std::get<0>(slots[i][n]) <= max_cost) {
                         uint64_t delta_cost = std::get<0>(slots[i][n]) - std::get<0>(solution[i]);
                         current_cost += delta_cost;
                         solution[i] = slots[i][n];
