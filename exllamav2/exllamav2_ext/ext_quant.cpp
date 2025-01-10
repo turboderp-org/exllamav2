@@ -173,21 +173,82 @@ std::tuple<std::vector<std::tuple<uint64_t, float>>, std::vector<int>, float, ui
     float norm
 )
 {
-    // --- Enhanced Parameters ---
-    const int redistribution_iterations = 50;
-    const float bpw_penalty_scale = 0.6f; // Stronger penalty for low BPW
-    const float min_bpw_base = 3.3f; // Higher base minimum BPW, we want higher bpw
-    const int opportunistic_iterations = 30000;
-    const float initial_opportunistic_temp = 0.12f;
-    const float low_error_threshold = 0.002f;
-    const float error_floor = 0.0005f;
-    const float targeted_redistribution_bpw_threshold = 3.6f;
-    const float targeted_redistribution_max_err_increase = 1.5f; // Increased tolerance for error increase in targeted redistribution
-    const float high_bpw_donor_threshold = 5.5f;
-    const int num_options_to_explore_per_layer = 8;
-    const int bpw_smoothing_passes = 8;
-    const float bpw_smoothing_threshold = 0.75f;
-    const float bpw_balance_factor = 1.8f; // Control trade-off between BPW uniformity and error
+    // --- Mode-Specific Parameters ---
+    enum Mode { MODE_BALANCED, MODE_UNIFORM, MODE_AGGRESSIVE, MODE_3_5_2, MODE_3_5_6, MODE_CUSTOM };
+    // --- Mode Selection ---
+    Mode mode = MODE_3_5_2;  // Default mode, Can be changed into other mode or MODE_CUSTOM
+
+    // Define a struct to hold parameters for different modes
+    struct ModeParams {
+        float bpw_penalty_scale;
+        float min_bpw_base;
+        float opportunistic_temp;
+        float error_floor;
+        float targeted_redistribution_max_err_increase;
+        float high_bpw_donor_threshold;
+        float bpw_balance_factor;
+        float low_error_threshold;
+        int redistribution_iterations;
+        int opportunistic_iterations;
+        int num_options_to_explore_per_layer;
+        int bpw_smoothing_passes;
+        float bpw_smoothing_threshold;
+        float targeted_redistribution_bpw_threshold;
+    };
+
+    // Define the parameter sets for each mode
+    const std::vector<ModeParams> mode_params = {
+        // MODE_BALANCED: Balanced trade-off between BPW uniformity and error
+        {0.6f, 3.2f, 0.1f, 0.0001f, 1.3f, 5.5f, 1.5f, 0.001f, 60, 30000, 8, 8, 0.75f, 3.5f},
+
+        // MODE_UNIFORM: Strong emphasis on BPW uniformity
+        {0.8f, 3.5f, 0.12f, 0.0005f, 1.5f, 6.0f, 3.0f, 0.001f, 80, 40000, 8, 10, 0.8f, 3.7f},
+
+        // MODE_AGGRESSIVE: Aggressively avoids low BPW, potentially higher error
+        {1.0f, 3.8f, 0.15f, 0.001f, 1.6f, 6.5f, 4.0f, 0.001f, 100, 50000, 8, 12, 0.9f, 3.9f},
+
+        // MODE_3_5_2: Approximates the behavior of Version 3-5-2
+        {0.1f, 3.0f, 0.05f, 0.0f, 1.2f, 5.0f, 0.1f, 0.0009f, 25, 15000, 3, 5, 0.5f, 3.3f},
+
+        // MODE_3_5_6: Replicates the behavior of Version 3-5-6
+        {0.6f, 3.3f, 0.12f, 0.0005f, 1.5f, 5.5f, 1.8f, 0.002f, 50, 30000, 8, 8, 0.75f, 3.6f},
+
+        // MODE_CUSTOM: User-defined parameters, will be overwritten if using custom mode
+        {0.6f, 3.2f, 0.1f, 0.0001f, 1.3f, 5.5f, 1.5f, 0.001f, 60, 30000, 8, 8, 0.75f, 3.5f} 
+    };
+
+    ModeParams params;
+    if (mode == MODE_CUSTOM)
+    {
+        params = {0.7f, 3.3f, 0.11f, 0.0002f, 1.35f, 5.7f, 2.0f, 0.001f, 70, 35000, 8, 9, 0.8f, 3.6f}; // Example custom parameters, you should change this
+    } else {
+        params = mode_params[mode];
+    }
+
+    // --- Parameter Application ---
+    // (Consolidated parameters are grouped together)
+
+    // Penalty-related parameters
+    const float bpw_penalty_scale = params.bpw_penalty_scale;
+    const float min_bpw_base = params.min_bpw_base;
+    const float bpw_balance_factor = params.bpw_balance_factor;
+
+    // Redistribution-related parameters
+    const int redistribution_iterations = params.redistribution_iterations;
+    const float targeted_redistribution_bpw_threshold = params.targeted_redistribution_bpw_threshold;
+    const float targeted_redistribution_max_err_increase = params.targeted_redistribution_max_err_increase;
+    const float high_bpw_donor_threshold = params.high_bpw_donor_threshold;
+    const int num_options_to_explore_per_layer = params.num_options_to_explore_per_layer;
+
+    // Opportunistic optimization parameters
+    const int opportunistic_iterations = params.opportunistic_iterations;
+    const float initial_opportunistic_temp = params.opportunistic_temp;
+    const float low_error_threshold = params.low_error_threshold;
+
+    // Other parameters
+    const float error_floor = params.error_floor;
+    const int bpw_smoothing_passes = params.bpw_smoothing_passes;
+    const float bpw_smoothing_threshold = params.bpw_smoothing_threshold;
 
     // --- Dynamic Minimum BPW ---
     auto calculate_dynamic_min_bpw = [&](float target_bpw, float temp_ratio) {
