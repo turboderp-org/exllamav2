@@ -3,6 +3,7 @@ from exllamav2.model import \
     ExLlamaV2Embedding,
     ExLlamaV2PosEmbedding,
     ExLlamaV2Attention,
+    ExLlamaV2LinearAttention,
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
     ExLlamaV2ParallelDecoder,
@@ -144,6 +145,17 @@ def quant_attn(job, module, hidden_states, target_states, quantizers, attn_param
     del quantizers[f"k_proj"]
     quant_linear(job, module.v_proj, quantizers["v_proj"], strat["v_proj"])
     del quantizers[f"v_proj"]
+    quant_linear(job, module.o_proj, quantizers["o_proj"], strat["o_proj"])
+    del quantizers[f"o_proj"]
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+
+def quant_linear_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat):
+
+    quantizers["o_proj"].prepare()
+
     quant_linear(job, module.o_proj, quantizers["o_proj"], strat["o_proj"])
     del quantizers[f"o_proj"]
 
@@ -309,6 +321,11 @@ def quant(job, save_fn, model):
             quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
             quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
 
+        elif isinstance(module, ExLlamaV2LinearAttention):
+            mode = "linear_attn"
+            # if index > 1: testc(module, hidden_states, hidden_i_states, module.input_layernorm, [module.q_proj, module.k_proj, module.v_proj])
+            quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
+
         elif isinstance(module, ExLlamaV2MLP):
             mode = "mlp"
             has_mlp = model.config.arch.lm.mlp_gate
@@ -368,6 +385,9 @@ def quant(job, save_fn, model):
                 quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K and V
                 quantizers["o_proj"].add_batch(outputs["attn_output"])
 
+            if mode == "linear_attn":
+                quantizers["o_proj"].add_batch(outputs["post_norm"])
+
             if mode == "mlp":
                 quantizers["up_proj"].add_batch(outputs["post_norm"])  # Reuse H for gate_proj
                 quantizers["down_proj"].add_batch(outputs["pre_down"])
@@ -408,6 +428,10 @@ def quant(job, save_fn, model):
         if mode == "self_attn":
             strat = strategy[module.key + "." + mode]
             quant_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat)
+
+        if mode == "linear_attn":
+            strat = strategy[module.key + "." + mode]
+            quant_linear_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat)
 
         if mode == "mlp":
             strat = strategy[module.key + "." + mode]

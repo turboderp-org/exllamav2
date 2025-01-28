@@ -62,11 +62,18 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.intermediate_size = cfg.vision_intermediate_size
         else:
             self.hidden_size = cfg.hidden_size
-            self.intermediate_size = cfg.intermediate_size
+            if type(cfg.intermediate_size) is list:
+                self.intermediate_size = cfg.intermediate_size[layer_idx]
+            else:
+                self.intermediate_size = cfg.intermediate_size
 
         if in_features is None: in_features = self.hidden_size
         if out_features is None: out_features = self.hidden_size
-        if interm_features is None: interm_features = self.intermediate_size
+        if interm_features is None: 
+            if type(self.intermediate_size) is list:
+                interm_features = self.intermediate_size[layer_idx]
+            else:
+                interm_features = self.intermediate_size
         self.in_features = in_features
         self.out_features = out_features
         self.interm_features = interm_features

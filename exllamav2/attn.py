@@ -161,8 +161,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.hidden_size = cfg.vision_hidden_size
         else:
             self.num_attention_heads = cfg.num_attention_heads
-            self.num_key_value_heads = cfg.num_key_value_heads
-            self.num_key_value_groups = cfg.num_key_value_groups
+            if type(cfg.num_key_value_heads) is list:
+                self.num_key_value_heads = cfg.num_key_value_heads[layer_idx]
+            else:
+                self.num_key_value_heads = cfg.num_key_value_heads
+            if type(cfg.num_key_value_groups) is list:
+                self.num_key_value_groups = cfg.num_key_value_groups[layer_idx]
+            else:
+                self.num_key_value_groups = cfg.num_key_value_groups
             self.head_dim = cfg.head_dim
             self.hidden_size = cfg.hidden_size
 
@@ -204,6 +210,7 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.v_proj,
             self.o_proj
         ]
+
         if self.pre_layernorm:
             self.submodules += [self.pre_layernorm]
         if self.post_layernorm:

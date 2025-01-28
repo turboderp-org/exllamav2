@@ -87,10 +87,22 @@ def optimize(job, save_fn, model):
         if cfg.arch.lm.parallel_decoder_blocks:
             m1 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".parallel_decoder"]["attn"]
             m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".parallel_decoder"]["mlp"]
+        elif type(cfg.arch.lm.layer_keys) is list and type(cfg.intermediate_size) is list:
+            if ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[i]:
+                m1 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".linear_attn"]
+                m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + "." + mlp_mode]
+            elif ["self_attn.o_proj"] in cfg.arch.lm.layer_keys[i]:
+                m1 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".self_attn"]
+                m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + "." + mlp_mode]
+            else:
+                m1 = None
+                m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + "." + mlp_mode]
         else:
             m1 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".self_attn"]
             m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + "." + mlp_mode]
         for m in [m1, m2]:
+            if m is None:
+                continue
             slot = []
             param = []
             for opt in m:
@@ -153,14 +165,34 @@ def optimize(job, save_fn, model):
     logerr = 0
     maxerr = 0
     job["strategy"] = {}
+    deci_offset = 0
     for layer_ in range(num_layers):
-
-        k1 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + ".self_attn"
-        k2 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + "." + mlp_mode
-        p1 = params[layer_ * 2][solution_idx[layer_ * 2]]
-        p2 = params[layer_ * 2 + 1][solution_idx[layer_ * 2 + 1]]
+        if type(cfg.arch.lm.layer_keys) is list and type(cfg.intermediate_size) is list:
+            if ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[layer_]:
+                k1 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + ".linear_attn"
+                k2 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + "." + mlp_mode
+                p1 = params[layer_ * 2-deci_offset][solution_idx[layer_ * 2-deci_offset]]
+                p2 = params[layer_ * 2 + 1-deci_offset][solution_idx[layer_ * 2 + 1-deci_offset]]
+            elif ["self_attn.o_proj"] in cfg.arch.lm.layer_keys[layer_]:
+                k1 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + ".self_attn"
+                k2 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + "." + mlp_mode
+                p1 = params[layer_ * 2-deci_offset][solution_idx[layer_ * 2-deci_offset]]
+                p2 = params[layer_ * 2 + 1-deci_offset][solution_idx[layer_ * 2 + 1-deci_offset]]
+            else:
+                deci_offset = deci_offset + 1
+                k1 = None
+                k2 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + "." + mlp_mode
+                p1 = None
+                p2 = params[layer_ * 2 + 1-deci_offset][solution_idx[layer_ * 2 + 1-deci_offset]]
+        else:
+            k1 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + ".self_attn"
+            k2 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + "." + mlp_mode
+            p1 = params[layer_ * 2][solution_idx[layer_ * 2]]
+            p2 = params[layer_ * 2 + 1][solution_idx[layer_ * 2 + 1]]
 
         for (k, p, n) in zip((k1, k2), (p1, p2), (numel_attn, numel_mlp)):
+            if k is None or p is None or n is None:
+                continue
             job["strategy"][k] = p
             bpw = p["total_bits"] / n
             err = 1 - p["accuracy"]
