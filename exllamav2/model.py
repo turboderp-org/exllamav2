@@ -37,7 +37,6 @@ from exllamav2.module import ExLlamaV2Module
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
 from exllamav2.layernorm import ExLlamaV2LayerNorm
 from exllamav2.attn import ExLlamaV2Attention, has_flash_attn, has_xformers
-from exllamav2.linear_attn import ExLlamaV2LinearAttention, has_flash_attn, has_xformers
 from exllamav2.lora import ExLlamaV2Lora
 from exllamav2.mlp import ExLlamaV2MLP
 from exllamav2.moe_mlp import ExLlamaV2MoEMLP
@@ -120,10 +119,7 @@ class ExLlamaV2:
                 self.modules += [pd]
             elif type(cfg.arch.lm.layer_keys) is list and type(cfg.intermediate_size) is list:
                 mlp = ExLlamaV2MLP(self, layer_key, layer_idx)
-                if ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[layer_idx]:
-                    attn = ExLlamaV2LinearAttention(self, layer_key, layer_idx)
-                    self.modules += [attn, mlp]
-                elif ["self_attn.o_proj"] in cfg.arch.lm.layer_keys[layer_idx]:
+                if ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[layer_idx] or ["self_attn.o_proj"] in cfg.arch.lm.layer_keys[layer_idx]:
                     attn = ExLlamaV2Attention(self, layer_key, layer_idx, sliding_window = swa)
                     self.modules += [attn, mlp]
                 else:
@@ -172,7 +168,6 @@ class ExLlamaV2:
         while True:
             layer_idx -= 1
             if isinstance(self.modules[layer_idx], ExLlamaV2Attention) or \
-               isinstance(self.modules[layer_idx], ExLlamaV2LinearAttention) or \
                isinstance(self.modules[layer_idx], ExLlamaV2ParallelDecoder):
                 break
 
@@ -621,7 +616,6 @@ class ExLlamaV2:
 
                     try:
                         if isinstance(module, ExLlamaV2Attention) or \
-                           isinstance(module, ExLlamaV2LinearAttention) or \
                            isinstance(module, ExLlamaV2ParallelDecoder):
                             self.cache_map[module.layer_idx] = module.device()
                             cache.update_cache_tensors()

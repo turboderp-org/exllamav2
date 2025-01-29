@@ -3,7 +3,6 @@ from exllamav2.model import \
     ExLlamaV2Embedding,
     ExLlamaV2PosEmbedding,
     ExLlamaV2Attention,
-    ExLlamaV2LinearAttention,
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
     ExLlamaV2ParallelDecoder,
@@ -134,6 +133,10 @@ def quant_linear(job: dict,
 
 
 def quant_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat):
+
+    # return quant_linear_attn in linear attention layer
+    if "q_proj" not in quantizers and "k_proj" not in quantizers and "v_proj" not in quantizers:
+        return quant_linear_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat)
 
     quantizers["q_proj"].prepare()
     quantizers["k_proj"].reuse_h(quantizers["q_proj"])
@@ -316,14 +319,12 @@ def quant(job, save_fn, model):
         if isinstance(module, ExLlamaV2Attention):
             mode = "self_attn"
             # if index > 1: testc(module, hidden_states, hidden_i_states, module.input_layernorm, [module.q_proj, module.k_proj, module.v_proj])
-            quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
-            quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
-            quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
-            quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
-
-        elif isinstance(module, ExLlamaV2LinearAttention):
-            mode = "linear_attn"
-            # if index > 1: testc(module, hidden_states, hidden_i_states, module.input_layernorm, [module.q_proj, module.k_proj, module.v_proj])
+            if module.q_proj is not None:
+                quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
+            if module.k_proj is not None:
+                quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
+            if module.v_proj is not None:
+                quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
             quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
 
         elif isinstance(module, ExLlamaV2MLP):
@@ -382,11 +383,11 @@ def quant(job, save_fn, model):
             # Hessians
 
             if mode == "self_attn":
-                quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K and V
-                quantizers["o_proj"].add_batch(outputs["attn_output"])
-
-            if mode == "linear_attn":
-                quantizers["o_proj"].add_batch(outputs["post_norm"])
+                if "q_proj" not in quantizers and "k_proj" not in quantizers and "v_proj" not in quantizers:
+                    quantizers["o_proj"].add_batch(outputs["post_norm"])
+                else:
+                    quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K and V
+                    quantizers["o_proj"].add_batch(outputs["attn_output"])
 
             if mode == "mlp":
                 quantizers["up_proj"].add_batch(outputs["post_norm"])  # Reuse H for gate_proj
@@ -428,10 +429,6 @@ def quant(job, save_fn, model):
         if mode == "self_attn":
             strat = strategy[module.key + "." + mode]
             quant_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat)
-
-        if mode == "linear_attn":
-            strat = strategy[module.key + "." + mode]
-            quant_linear_attn(job, module, hidden_states, target_states, quantizers, attn_params, strat)
 
         if mode == "mlp":
             strat = strategy[module.key + "." + mode]

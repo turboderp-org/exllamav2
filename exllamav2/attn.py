@@ -192,10 +192,16 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         f_d = f_c + self.num_key_value_heads * self.head_dim
         f_key = (key + km["fused_qkv"]) if km["fused_qkv"] else None
 
-        self.q_proj = ExLlamaV2Linear(model, key + km["attn_q"], hidden_size, self.num_attention_heads * self.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b, altpack_qkv = ap.fused_qkv_altpack)
-        self.k_proj = ExLlamaV2Linear(model, key + km["attn_k"], hidden_size, self.num_key_value_heads * self.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c, altpack_qkv = ap.fused_qkv_altpack)
-        self.v_proj = ExLlamaV2Linear(model, key + km["attn_v"], hidden_size, self.num_key_value_heads * self.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d, altpack_qkv = ap.fused_qkv_altpack)
-        self.o_proj = ExLlamaV2Linear(model, key + km["attn_o"], self.num_attention_heads * self.head_dim, hidden_size, ap.attention_bias_o, prescale = cfg.scale_depth)
+        if type(cfg.num_key_value_heads) is list and ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[layer_idx]:
+            self.q_proj = None
+            self.k_proj = None
+            self.v_proj = None
+            self.o_proj = ExLlamaV2Linear(model, key + km["linear_attn"], self.num_attention_heads * self.head_dim, hidden_size, ap.attention_bias_o, prescale = cfg.scale_depth)
+        else:
+            self.q_proj = ExLlamaV2Linear(model, key + km["attn_q"], hidden_size, self.num_attention_heads * self.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_a, f_end = f_b, altpack_qkv = ap.fused_qkv_altpack)
+            self.k_proj = ExLlamaV2Linear(model, key + km["attn_k"], hidden_size, self.num_key_value_heads * self.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_b, f_end = f_c, altpack_qkv = ap.fused_qkv_altpack)
+            self.v_proj = ExLlamaV2Linear(model, key + km["attn_v"], hidden_size, self.num_key_value_heads * self.head_dim, ap.attention_bias_qkv, f_key = f_key, f_beg = f_c, f_end = f_d, altpack_qkv = ap.fused_qkv_altpack)
+            self.o_proj = ExLlamaV2Linear(model, key + km["attn_o"], self.num_attention_heads * self.head_dim, hidden_size, ap.attention_bias_o, prescale = cfg.scale_depth)
 
         if cfg.use_qk_norm:
             self.q_norm = ExLlamaV2HeadNorm(model, key + ".self_attn.q_norm", self.num_attention_heads, self.head_dim)
@@ -204,12 +210,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             self.q_norm = None
             self.k_norm = None
 
-        self.submodules = [
-            self.q_proj,
-            self.k_proj,
-            self.v_proj,
-            self.o_proj
-        ]
+        if type(cfg.num_key_value_heads) is list and ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[layer_idx]:
+            self.submodules = [
+                self.o_proj
+            ]
+        else:
+            self.submodules = [
+                self.q_proj,
+                self.k_proj,
+                self.v_proj,
+                self.o_proj
+            ]
 
         if self.pre_layernorm:
             self.submodules += [self.pre_layernorm]
@@ -230,10 +241,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def numel(self) -> int:
 
-        numel = self.q_proj.numel() + \
-                self.k_proj.numel() + \
-                self.v_proj.numel() + \
-                self.o_proj.numel()
+        numel = self.o_proj.numel()
+        if self.q_proj is not None: numel += self.q_proj.numel()
+        if self.k_proj is not None: numel += self.k_proj.numel()
+        if self.v_proj is not None: numel += self.v_proj.numel()
 
         if self.pre_layernorm is not None: numel += self.pre_layernorm.numel()
         if self.post_layernorm is not None: numel += self.post_layernorm.numel()
@@ -250,10 +261,12 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if self.pre_layernorm is not None: self.pre_layernorm.load()
         if self.post_layernorm is not None: self.post_layernorm.load()
+        self.o_proj.load(device_context = device_context)
+        if self.q_proj is None and self.k_proj is None and self.v_proj is None:
+            return
         self.q_proj.load(device_context = device_context)
         self.k_proj.load(device_context = device_context)
         self.v_proj.load(device_context = device_context)
-        self.o_proj.load(device_context = device_context)
         if self.q_norm is not None: self.q_norm.load()
         if self.k_norm is not None: self.k_norm.load()
 
@@ -354,10 +367,10 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def weight_footprint(self):
 
-        fp = self.q_proj.weight_footprint() + \
-             self.k_proj.weight_footprint() + \
-             self.v_proj.weight_footprint() + \
-             self.o_proj.weight_footprint()
+        fp = self.o_proj.weight_footprint()
+        if self.q_proj is not None: fp += self.q_proj.weight_footprint()
+        if self.k_proj is not None: fp += self.k_proj.weight_footprint()
+        if self.v_proj is not None: fp += self.v_proj.weight_footprint()
         if self.pre_layernorm is not None:
             fp += self.pre_layernorm.weight_footprint()
         if self.post_layernorm is not None:
@@ -413,10 +426,13 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
     def temp_dq_size(self):
 
-        return max(self.q_proj.temp_dq_size(),
-                   self.k_proj.temp_dq_size(),
-                   self.v_proj.temp_dq_size(),
-                   self.o_proj.temp_dq_size())
+        if self.q_proj is None and self.k_proj is None and self.v_proj is None:
+            return self.o_proj.temp_dq_size()
+        else:
+            return max(self.q_proj.temp_dq_size(),
+                       self.k_proj.temp_dq_size(),
+                       self.v_proj.temp_dq_size(),
+                       self.o_proj.temp_dq_size())
 
 
     def temp_kv_size(self):
@@ -447,9 +463,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
 
         if self.pre_layernorm is not None: self.pre_layernorm.set_device_idx(idx)
         if self.post_layernorm is not None: self.post_layernorm.set_device_idx(idx)
-        self.q_proj.set_device_idx(idx)
-        self.k_proj.set_device_idx(idx)
-        self.v_proj.set_device_idx(idx)
+        if self.q_proj is not None: self.q_proj.set_device_idx(idx)
+        if self.k_proj is not None: self.k_proj.set_device_idx(idx)
+        if self.v_proj is not None: self.v_proj.set_device_idx(idx)
         self.o_proj.set_device_idx(idx)
         if self.q_norm is not None: self.q_norm.set_device_idx(idx)
         if self.k_norm is not None: self.k_norm.set_device_idx(idx)
@@ -475,6 +491,14 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         **kwargs
     ) -> torch.Tensor:
 
+        if self.q_proj is None and self.k_proj is None and self.v_proj is None:
+            return self.forward_paged_linear(
+                hidden_states,
+                cache,
+                attn_params,
+                loras,
+                **kwargs,
+            )
         if self.is_tp:
             return self.forward_paged_tp(
                 hidden_states,
@@ -637,6 +661,50 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 hidden_states = self.post_layernorm.forward(hidden_states)
             if self.has_residual:
                 hidden_states += residual
+
+        return hidden_states
+
+    # @profile
+    def forward_paged_linear(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.PagedParams | None = None,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor:
+
+        is_q = self.q_handle is not None
+        cfg = self.model.config
+        constants = self.model.get_device_context(self.device_idx, scratch = is_q)
+        page_size = attn_params.page_size
+        batch_size, q_len, _ = hidden_states.shape
+        cache_seqlens = attn_params.get_cache_seqlens(self.device_idx)
+        block_table = attn_params.get_block_index(self.device_idx)
+
+        sc = attn_params.get_alt_rope_embed(self.device_idx)
+        if not sc:
+            sin, cos = constants.sin, constants.cos
+        else:
+            sin, cos = sc
+
+        cache_seqlens_rope = cache_seqlens
+        offsets = attn_params.get_rope_offsets(self.device_idx)
+        if offsets is not None:
+            cache_seqlens_rope = cache_seqlens_rope + offsets
+
+        residual = hidden_states
+        hidden_states = self.pre_layernorm.forward(hidden_states) if self.has_norm else hidden_states
+
+        attn_output = hidden_states.view((batch_size, q_len, self.num_attention_heads * self.head_dim))
+
+        cache.store_kv_state(self.layer_idx, batch_size, 0, q_len, page_size, cache_seqlens, block_table)
+
+        hidden_states = self.o_proj.forward(attn_output, loras = loras)
+        if self.post_layernorm:
+            hidden_states = self.post_layernorm.forward(hidden_states)
+        if self.has_residual:
+            hidden_states += residual
 
         return hidden_states
 
@@ -1375,6 +1443,17 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         loras: list[ExLlamaV2Lora] | None = None,
         **kwargs
     ) -> torch.Tensor | dict:
+
+        if self.q_proj is None and self.k_proj is None and self.v_proj is None:
+            return self.forward_torch_linear(
+                hidden_states,
+                cache,
+                attn_params,
+                past_len,
+                intermediates,
+                loras,
+                **kwargs,
+            )
     
         global has_flash_attn
         global has_xformers
@@ -1508,6 +1587,54 @@ class ExLlamaV2Attention(ExLlamaV2Module):
         else:
             return hidden_states
 
+    def forward_torch_linear(
+        self,
+        hidden_states: torch.Tensor,
+        cache: ExLlamaV2CacheBase | None = None,
+        attn_params: ExLlamaV2Attention.Params | None = None,
+        past_len: int | None = None,
+        intermediates: bool = False,
+        loras: list[ExLlamaV2Lora] | None = None,
+        **kwargs
+    ) -> torch.Tensor | dict:
+
+        cfg = self.model.config
+        num_attention_heads = self.num_attention_heads
+        num_key_value_heads = self.num_key_value_heads
+        head_dim = self.head_dim
+
+        batch_size, q_len, _ = hidden_states.size()
+
+        past_len = 0 if cache is None else cache.current_seq_len
+
+        # Project q, k, v
+
+        residual = hidden_states
+        post_norm = self.pre_layernorm.forward(hidden_states) if self.has_norm else hidden_states
+
+        # Output projection
+
+        attn_proj = self.o_proj.forward(post_norm, loras = loras)
+
+        # Post layernorm
+
+        if self.post_layernorm:
+            attn_proj = self.post_layernorm.forward(attn_proj, output_fp32 = self.archparams.residual_stream_fp32)
+
+        # Add residual connection
+
+        hidden_states = (attn_proj + residual) if self.has_residual else attn_proj
+
+        if self.archparams.residual_stream_fp32:
+            hidden_states = hidden_states.float()
+        elif self.archparams.clamp_hidden_states:
+            hidden_states.clamp_(-65504, 65504)
+
+        if intermediates:
+            return {"post_norm": post_norm,
+                    "hidden_states": hidden_states}
+        else:
+            return hidden_states
 
     def update_loras(self):
 

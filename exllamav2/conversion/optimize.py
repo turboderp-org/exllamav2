@@ -88,10 +88,7 @@ def optimize(job, save_fn, model):
             m1 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".parallel_decoder"]["attn"]
             m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".parallel_decoder"]["mlp"]
         elif type(cfg.arch.lm.layer_keys) is list and type(cfg.intermediate_size) is list:
-            if ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[i]:
-                m1 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".linear_attn"]
-                m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + "." + mlp_mode]
-            elif ["self_attn.o_proj"] in cfg.arch.lm.layer_keys[i]:
+            if ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[i] or ["self_attn.o_proj"] in cfg.arch.lm.layer_keys[i]:
                 m1 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + ".self_attn"]
                 m2 = measurement[cfg.arch.lm_prefix + "model.layers." + str(i) + "." + mlp_mode]
             else:
@@ -168,12 +165,7 @@ def optimize(job, save_fn, model):
     deci_offset = 0
     for layer_ in range(num_layers):
         if type(cfg.arch.lm.layer_keys) is list and type(cfg.intermediate_size) is list:
-            if ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[layer_]:
-                k1 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + ".linear_attn"
-                k2 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + "." + mlp_mode
-                p1 = params[layer_ * 2-deci_offset][solution_idx[layer_ * 2-deci_offset]]
-                p2 = params[layer_ * 2 + 1-deci_offset][solution_idx[layer_ * 2 + 1-deci_offset]]
-            elif ["self_attn.o_proj"] in cfg.arch.lm.layer_keys[layer_]:
+            if ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[layer_] or ["self_attn.o_proj"] in cfg.arch.lm.layer_keys[layer_]:
                 k1 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + ".self_attn"
                 k2 = cfg.arch.lm_prefix + "model.layers." + str(layer_) + "." + mlp_mode
                 p1 = params[layer_ * 2-deci_offset][solution_idx[layer_ * 2-deci_offset]]

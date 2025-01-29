@@ -3,7 +3,6 @@ from exllamav2.model import \
     ExLlamaV2Embedding,
     ExLlamaV2PosEmbedding,
     ExLlamaV2Attention,
-    ExLlamaV2LinearAttention,
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
     ExLlamaV2ParallelDecoder,
@@ -94,17 +93,12 @@ def compile_model(job, save_fn, model):
                 if d: out_dict.update(d); current_size += _dsize(d)
                 d = get_f_module(job, module.post_layernorm)
                 if d: out_dict.update(d); current_size += _dsize(d)
-                d = get_q_module(job, module.q_proj); out_dict.update(d); current_size += _dsize(d)
-                d = get_q_module(job, module.k_proj); out_dict.update(d); current_size += _dsize(d)
-                d = get_q_module(job, module.v_proj); out_dict.update(d); current_size += _dsize(d)
-                d = get_q_module(job, module.o_proj); out_dict.update(d); current_size += _dsize(d)
-
-            if isinstance(module, ExLlamaV2LinearAttention):
-
-                d = get_f_module(job, module.pre_layernorm)
-                if d: out_dict.update(d); current_size += _dsize(d)
-                d = get_f_module(job, module.post_layernorm)
-                if d: out_dict.update(d); current_size += _dsize(d)
+                if module.q_proj is not None:
+                    d = get_q_module(job, module.q_proj); out_dict.update(d); current_size += _dsize(d)
+                if module.k_proj is not None:
+                    d = get_q_module(job, module.k_proj); out_dict.update(d); current_size += _dsize(d)
+                if module.v_proj is not None:
+                    d = get_q_module(job, module.v_proj); out_dict.update(d); current_size += _dsize(d)
                 d = get_q_module(job, module.o_proj); out_dict.update(d); current_size += _dsize(d)
 
             if isinstance(module, ExLlamaV2MLP):

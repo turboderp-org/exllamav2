@@ -3,7 +3,6 @@ from exllamav2.model import \
     ExLlamaV2Embedding,
     ExLlamaV2PosEmbedding,
     ExLlamaV2Attention,
-    ExLlamaV2LinearAttention,
     ExLlamaV2MLP,
     ExLlamaV2MoEMLP,
     ExLlamaV2Linear,
@@ -143,6 +142,9 @@ def test_error(module, hidden_states, target_states, cache, attn_params):
 
 
 def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params, keep_q = False):
+# return linear_attn call if q,k,v are not in this layer
+    if "q_proj" not in quantizers and "k_proj" not in quantizers and "v_proj" not in quantizers:
+        return measure_linear_attn(module, hidden_states, target_states, quantizers, cache, attn_params)
 
     qjobs, qmaps = get_qparams_reduced(qparams_attn)
     results = []
@@ -527,16 +529,12 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
 
         if isinstance(module, ExLlamaV2Attention):
             mode = "self_attn"
-            if module.q_proj.linear is not None:
+            if module.q_proj is not None:
                 quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
-            if module.k_proj.linear is not None:
+            if module.k_proj is not None:
                 quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
-            if module.v_proj.linear is not None:
+            if module.v_proj is not None:
                 quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
-            quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
-
-        elif isinstance(module, ExLlamaV2LinearAttention):
-            mode = "linear_attn"
             quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
 
         elif isinstance(module, ExLlamaV2MLP):
@@ -578,7 +576,7 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
 
         cache = None
         attn_params = ExLlamaV2Attention.Params(1, hidden_states[0].shape[1], 0, None, None) \
-            if mode in ["self_attn", "linear_attn", "parallel_decoder"] else None
+            if mode in ["self_attn", "parallel_decoder"] else None
 
         target_states = []
         target_states_attn = []
@@ -625,13 +623,13 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
             # Hessians
 
             if mode == "self_attn":
-                quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K and V
-                quantizers["o_proj"].add_batch(outputs["attn_output"])
+                if module.q_proj is None and module.k_proj is None and module.v_proj is None:
+                    quantizers["o_proj"].add_batch(outputs["post_norm"])
+                else:
+                    quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K and V
+                    quantizers["o_proj"].add_batch(outputs["attn_output"])
                 target_states.append(outputs["hidden_states"].to(target_device))
 
-            if mode == "linear_attn":
-                quantizers["o_proj"].add_batch(outputs["post_norm"])
-                target_states.append(outputs["hidden_states"].to(target_device))
 
             if mode == "mlp":
                 quantizers["up_proj"].add_batch(outputs["post_norm"])  # Reuse H for gate_proj
@@ -676,8 +674,6 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
         if mode == "self_attn":
             m = measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params)
 
-        if mode == "linear_attn":
-            m = measure_linear_attn(module, hidden_states, target_states, quantizers, cache, attn_params)
         if mode == "mlp":
             m = measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_params)
 
