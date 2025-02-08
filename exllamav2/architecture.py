@@ -139,6 +139,7 @@ class ExLlamaV2ArchParams:
                 "attn_k": ".self_attn.k_proj",
                 "attn_v": ".self_attn.v_proj",
                 "attn_o": ".self_attn.o_proj",
+                "linear_attn": ".self_attn.linear_attn",
                 "layers": "layers",
                 "patch_conv": "patch_conv",
             })
@@ -708,6 +709,21 @@ class ExLlamaV2ArchParams:
                 layer_keys_llama_mlp
             self.lm.expect_keys += \
                 expect_keys_llama
+
+        # Deci
+
+        if arch_string == "DeciLMForCausalLM":
+            arch_recognized = True
+            self.lm.layer_keys += \
+                layer_keys_llama_norms + \
+                layer_keys_llama_attn + \
+                layer_keys_llama_mlp
+            self.lm.expect_keys += \
+                expect_keys_llama
+#            self.lm.keys.update({
+#                "attn_o": ".self_attn.linear_attn",
+#            })
+            self.lm.supports_tp = True
 
         # Llama (default + fallback)
 

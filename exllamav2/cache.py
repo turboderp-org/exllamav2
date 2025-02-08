@@ -63,10 +63,19 @@ class ExLlamaV2CacheBase:
         self.head_dim = self.model.config.head_dim
 
         self.current_seq_len = 0
-        self.shape_basic = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim)
-        self.shape_wk = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element_k)
-        self.shape_wv = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // self.weights_per_element_v)
-        self.shape_s = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim // 32)
+
+        if type(self.num_key_value_heads) is list:
+            self.shape_basic = (self.batch_size, self.max_seq_len, max(self.num_key_value_heads), self.head_dim)
+        else:
+            self.shape_basic = (self.batch_size, self.max_seq_len, self.num_key_value_heads, self.head_dim)
+            self.num_key_value_heads = [self.num_key_value_heads] * self.num_hidden_layers
+        self.shape_wk = list()
+        self.shape_wv = list()
+        self.shape_s = list()
+        for il in range(self.num_hidden_layers):
+            self.shape_wk.append((self.batch_size, self.max_seq_len, self.num_key_value_heads[il], self.head_dim // self.weights_per_element_k))
+            self.shape_wv.append((self.batch_size, self.max_seq_len, self.num_key_value_heads[il], self.head_dim // self.weights_per_element_v))
+            self.shape_s.append((self.batch_size, self.max_seq_len, self.num_key_value_heads[il], self.head_dim // 32))
 
         self.q_block = 0
         self.fixed_device = fixed_device
@@ -88,11 +97,11 @@ class ExLlamaV2CacheBase:
 
                 if copy_from is None:
                     device = self.model.cache_map.get(i, self.fixed_device)
-                    p_key_states = torch.zeros(self.shape_wk, dtype = self.dtype, device = device).contiguous()
-                    p_value_states = torch.zeros(self.shape_wv, dtype = self.dtype, device = device).contiguous()
+                    p_key_states = torch.zeros(self.shape_wk[i], dtype = self.dtype, device = device).contiguous()
+                    p_value_states = torch.zeros(self.shape_wv[i], dtype = self.dtype, device = device).contiguous()
                     if self.has_scales:
-                        p_key_scales = torch.zeros(self.shape_s, dtype = torch.float16, device = device).contiguous()
-                        p_value_scales = torch.zeros(self.shape_s, dtype = torch.float16, device = device).contiguous()
+                        p_key_scales = torch.zeros(self.shape_s[i], dtype = torch.float16, device = device).contiguous()
+                        p_value_scales = torch.zeros(self.shape_s[i], dtype = torch.float16, device = device).contiguous()
                 else:
                     p_key_states = copy_from.key_states[i].clone()
                     p_value_states = copy_from.value_states[i].clone()
@@ -129,13 +138,13 @@ class ExLlamaV2CacheBase:
                 self.key_states[k] = None
                 self.value_states[k] = None
 
-            p_key_states = torch.zeros(self.shape_wk, dtype = self.dtype, device = v).contiguous()
-            p_value_states = torch.zeros(self.shape_wv, dtype = self.dtype, device = v).contiguous()
+            p_key_states = torch.zeros(self.shape_wk[k], dtype = self.dtype, device = v).contiguous()
+            p_value_states = torch.zeros(self.shape_wv[k], dtype = self.dtype, device = v).contiguous()
             self.key_states[k] = p_key_states
             self.value_states[k] = p_value_states
             if self.has_scales:
-                p_key_scales = torch.zeros(self.shape_s, dtype = torch.float16, device = v).contiguous()
-                p_value_scales = torch.zeros(self.shape_s, dtype = torch.float16, device = v).contiguous()
+                p_key_scales = torch.zeros(self.shape_s[k], dtype = torch.float16, device = v).contiguous()
+                p_value_scales = torch.zeros(self.shape_s[k], dtype = torch.float16, device = v).contiguous()
                 self.key_scales[k] = p_key_scales
                 self.value_scales[k] = p_value_scales
 

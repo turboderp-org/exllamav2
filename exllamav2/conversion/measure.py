@@ -142,6 +142,9 @@ def test_error(module, hidden_states, target_states, cache, attn_params):
 
 
 def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_params, keep_q = False):
+# return linear_attn call if q,k,v are not in this layer
+    if "q_proj" not in quantizers and "k_proj" not in quantizers and "v_proj" not in quantizers:
+        return measure_linear_attn(module, hidden_states, target_states, quantizers, cache, attn_params)
 
     qjobs, qmaps = get_qparams_reduced(qparams_attn)
     results = []
@@ -202,6 +205,48 @@ def measure_attn(module, hidden_states, target_states, quantizers, cache, attn_p
 
     return results
 
+def measure_linear_attn(module, hidden_states, target_states, quantizers, cache, attn_params):
+
+    qjobs, qmaps = get_qparams_reduced(qparams_attn)
+    results = []
+
+    quantizers["o_proj"].prepare()
+
+    options_o, bits_o = test_quant(module.o_proj, quantizers["o_proj"], qjobs[3])
+
+    total_numel = module.o_proj.numel()
+
+    max_accuracy = 0.0
+    (q_, k_, v_, o_) = (-1, -1, -1, -1)
+    for (q, k, v, o) in qmaps:
+
+        if o != o_: module.o_proj.linear.weight = nn.Parameter(options_o[o].weight.cuda())
+        (q_, k_, v_, o_) = (q, k, v, o)
+
+        total_bits = bits_o[o]
+        total_bpw = total_bits / total_numel
+
+        accuracy = test_error(module, hidden_states, target_states, cache, attn_params)
+        print(f" -- {total_bpw:1.4f} bpw  accuracy: {accuracy:1.8f}")
+
+        max_accuracy = max(accuracy, max_accuracy)
+
+        torch.cuda.empty_cache()
+
+        r = { "accuracy": accuracy,
+              "total_bits": total_bits,
+              "o_proj": qjobs[3][o].get_dict() }
+        results.append(r)
+
+    if max_accuracy < 0.1:
+        print(" ## Measurement/inference error (1)")
+        os._exit(1)
+
+    for x in ["o_proj"]:
+        if x in quantizers:
+            del quantizers[x]
+
+    return results
 
 def measure_mlp(module, hidden_states, target_states, quantizers, cache, attn_params, reuse_h_up_proj = None):
 
@@ -484,9 +529,12 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
 
         if isinstance(module, ExLlamaV2Attention):
             mode = "self_attn"
-            quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
-            quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
-            quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
+            if module.q_proj is not None:
+                quantizers["q_proj"] = AdaptiveGPTQ(module.q_proj.linear)
+            if module.k_proj is not None:
+                quantizers["k_proj"] = AdaptiveGPTQ(module.k_proj.linear)
+            if module.v_proj is not None:
+                quantizers["v_proj"] = AdaptiveGPTQ(module.v_proj.linear)
             quantizers["o_proj"] = AdaptiveGPTQ(module.o_proj.linear)
 
         elif isinstance(module, ExLlamaV2MLP):
@@ -575,9 +623,13 @@ def measure_quant(job, save_fn, model, hidden_state_offload_layers):
             # Hessians
 
             if mode == "self_attn":
-                quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K and V
-                quantizers["o_proj"].add_batch(outputs["attn_output"])
+                if module.q_proj is None and module.k_proj is None and module.v_proj is None:
+                    quantizers["o_proj"].add_batch(outputs["post_norm"])
+                else:
+                    quantizers["q_proj"].add_batch(outputs["post_norm"])  # Reuse H for K and V
+                    quantizers["o_proj"].add_batch(outputs["attn_output"])
                 target_states.append(outputs["hidden_states"].to(target_device))
+
 
             if mode == "mlp":
                 quantizers["up_proj"].add_batch(outputs["post_norm"])  # Reuse H for gate_proj

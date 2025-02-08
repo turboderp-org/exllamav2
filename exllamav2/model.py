@@ -117,6 +117,13 @@ class ExLlamaV2:
             if cfg.arch.lm.parallel_decoder_blocks:
                 pd = ExLlamaV2ParallelDecoder(self, layer_key, layer_idx, sliding_window = swa)
                 self.modules += [pd]
+            elif type(cfg.arch.lm.layer_keys) is list and type(cfg.intermediate_size) is list:
+                mlp = ExLlamaV2MLP(self, layer_key, layer_idx)
+                if ["self_attn.linear_attn"] in cfg.arch.lm.layer_keys[layer_idx] or ["self_attn.o_proj"] in cfg.arch.lm.layer_keys[layer_idx]:
+                    attn = ExLlamaV2Attention(self, layer_key, layer_idx, sliding_window = swa)
+                    self.modules += [attn, mlp]
+                else:
+                    self.modules += [mlp]
             else:
                 attn = ExLlamaV2Attention(self, layer_key, layer_idx, sliding_window = swa)
                 if cfg.arch.lm.is_moe: mlp = ExLlamaV2MoEMLP(self, layer_key, layer_idx)

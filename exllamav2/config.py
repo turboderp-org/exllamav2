@@ -289,7 +289,8 @@ class ExLlamaV2Config:
                 self.num_attention_heads,
                 opt_subkey = "text_config",
             )
-        self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
+            self.num_key_value_groups = self.num_attention_heads // self.num_key_value_heads
+
         self.use_qk_norm = read(read_config, bool, ["use_qk_norm"], False)
 
         self.query_pre_attn_scalar = read(read_config, float, "query_pre_attn_scalar", None)
@@ -302,13 +303,55 @@ class ExLlamaV2Config:
         else:
             default_intermediate_size = no_default
 
-        self.intermediate_size = read(
-            read_config,
-            int,
-            ["intermediate_size", "ffn_config->ffn_hidden_size", "n_inner"],
-            default_intermediate_size,
-            opt_subkey = "text_config",
-        )
+# Deci overrides num_key_value_heads, num_key_value_groups and intermediate size
+        if self.architecture == "DeciLMForCausalLM":
+            if "block_configs" in read_config: # # Llama-3_1-Nemotron-51B
+                _block_configs: list[dict[str,Any]] = read_config["block_configs"]
+                assert self.num_hidden_layers == len(_block_configs)
+                self.num_key_value_heads = list()
+                self.num_key_value_groups = list()
+                self.intermediate_size = list()
+                self.arch.lm.layer_keys = list()
+                for il in range(len(_block_configs)):
+                    if _block_configs[il]["attention"]["n_heads_in_group"] is None:
+                        if _block_configs[il]["attention"]["replace_with_linear"] is True:
+                            self.num_key_value_heads.append(0)
+                            self.arch.lm.layer_keys.append([["input_layernorm"],["post_attention_layernorm"],["self_attn.linear_attn"],["mlp.down_proj"],["mlp.gate_proj"],["mlp.up_proj"]])
+                        else:
+                            self.num_key_value_heads.append(0)
+                            self.arch.lm.layer_keys.append([["mlp.down_proj"],["mlp.gate_proj"],["mlp.up_proj"]])
+                    else:
+                        self.num_key_value_heads.append(self.num_attention_heads // _block_configs[il]["attention"]["n_heads_in_group"])
+                        self.arch.lm.layer_keys.append([["input_layernorm"],["post_attention_layernorm"],["self_attn.q_proj"], ["self_attn.k_proj"],["self_attn.v_proj"],["self_attn.o_proj"],["mlp.down_proj"],["mlp.gate_proj"],["mlp.up_proj"]])
+                    if self.num_key_value_heads[il] == 0:
+                        self.num_key_value_groups.append(0)
+                    else:
+                        self.num_key_value_groups.append(self.num_attention_heads // self.num_key_value_heads[il])
+                    ffn_mult = _block_configs[il]["ffn"]["ffn_mult"]
+                    intm_size = int(2 * ffn_mult * self.hidden_size / 3)
+                    if intm_size % 256 != 0:
+                        intm_size = intm_size + 256 - (intm_size % 256)
+                    self.intermediate_size.append(intm_size)
+            else: # Deci-7B, no need to override intermediate_size
+                self.num_key_value_heads: list[int] = read_config["num_key_value_heads_per_layer"]
+                self.num_key_value_groups = list()
+                for il in range(len(self.num_key_value_heads)):
+                    self.num_key_value_groups.append(self.num_attention_heads // self.num_key_value_heads[il])
+                self.intermediate_size = read(
+                    read_config,
+                    int,
+                    ["intermediate_size", "ffn_config->ffn_hidden_size", "n_inner"],
+                    default_intermediate_size,
+                    opt_subkey = "text_config",
+                )
+        else:
+            self.intermediate_size = read(
+                read_config,
+                int,
+                ["intermediate_size", "ffn_config->ffn_hidden_size", "n_inner"],
+                default_intermediate_size,
+                opt_subkey = "text_config",
+            )
         self.num_experts = read(read_config, int, ["num_local_experts", "ffn_config->moe_num_experts"], None)
         self.num_experts_per_token = read(read_config, int,["num_experts_per_tok", "ffn_config->moe_top_k"], None)
 
@@ -453,6 +496,46 @@ class ExLlamaV2Config:
             all_keys = set(self.tensor_file_map.keys())
             suffixes = [".q_weight", ".qweight", ".weight", ""]
 
+#            for k in all_keys:
+#                print(k)
+#            print("****End of all_keys****")
+
+            for prefixes in expect_keys:
+#                print(prefixes)
+                match = False
+                for prefix in prefixes:
+                    for suffix in suffixes:
+                        if (prefix + suffix) in all_keys:
+                            match = True
+                            break
+                        if match: break
+                    if match: break
+                if not match:
+                    raise ValueError(f" ## Could not find {prefix}.* in model")
+
+        def check_deci_keys(archparams, prefix):
+            expect_keys = archparams.expect_keys.copy()
+
+            per_layer_keys = archparams.layer_keys
+
+            for layer_idx in range(self.num_hidden_layers):
+                for ks in per_layer_keys[layer_idx]:
+                    prefixes = [f"model.layers.{layer_idx}.{k}" for k in ks]
+                    expect_keys.append(prefixes)
+
+            if self.arch.lm_prefix:
+                expect_keys = [
+                    [prefix + k for k in k2]
+                    for k2 in expect_keys
+                ]
+
+            all_keys = set(self.tensor_file_map.keys())
+            suffixes = [".q_weight", ".qweight", ".weight", ""]
+
+#            for k in all_keys:
+#                print(k)
+#            print("****End of all_keys****")
+
             for prefixes in expect_keys:
                 match = False
                 for prefix in prefixes:
@@ -465,7 +548,10 @@ class ExLlamaV2Config:
                 if not match:
                     raise ValueError(f" ## Could not find {prefix}.* in model")
 
-        check_keys(self.arch.lm, self.arch.lm_prefix)
+        if self.architecture == "DeciLMForCausalLM" and "block_configs" in read_config: # # Llama-3_1-Nemotron-51B
+            check_deci_keys(self.arch.lm, self.arch.lm_prefix)
+        else:
+            check_keys(self.arch.lm, self.arch.lm_prefix)
         check_keys(self.arch.mmp, self.arch.mmp_prefix)
         check_keys(self.arch.vt, self.arch.vt_prefix)
 

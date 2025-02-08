@@ -471,6 +471,8 @@ class ExLlamaV2DynamicGenerator:
                 cache_tensors += self.draft_cache.all_tensors()
 
             for c in cache_tensors:
+                if c is None:
+                    continue
                 key = (c.device.index, c.dtype, c.shape[2], c.shape[3])
                 if key not in self.defrag_buffer:
                     t = torch.empty((1, self.page_size, c.shape[2], c.shape[3]), dtype = c.dtype, device = c.device)
