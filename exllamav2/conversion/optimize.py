@@ -105,6 +105,7 @@ def optimize(job, save_fn, model):
     last_update = 0
     m = float("inf")
     p = float("inf")
+    c = weight_budget
     for i in range(anneal_stages * anneal_samples):
         if time.time() - last_update > 1 or i == anneal_samples - 1:
             print(f" -- Optimizing: {i + 1:4}/{anneal_stages * anneal_samples:4}")
@@ -125,13 +126,15 @@ def optimize(job, save_fn, model):
         else:
             norm = bestnorm
 
-        s_, si_, p_, c_, m_ = ext_c.sim_anneal(slots,
-                                               weight_budget,
-                                               anneal_temp_max,
-                                               anneal_cooling_factor,
-                                               anneal_temp_min,
-                                               anneal_iter,
-                                               norm)
+        s_, si_, p_, c_, m_ = ext_c.sim_anneal(
+            slots,
+            weight_budget,
+            anneal_temp_max,
+            anneal_cooling_factor,
+            anneal_temp_min,
+            anneal_iter,
+            norm
+        )
 
         if i < anneal_samples * 2:
             if m_ < m:
@@ -139,12 +142,24 @@ def optimize(job, save_fn, model):
                 bestnorm = norm
         else:
             if p_ < p:
-                s, si, p, m = s_, si_, p_, m_
+                s, si, p, c, m = s_, si_, p_, c_, m_
+
+    # Tweak solution in case there is some budget left over
+
+    while True:
+        repeat = False
+        for i in range(len(si)):
+            if si[i] < len(slots[i]) - 1:
+                delta_c = slots[i][si[i] + 1][0] - slots[i][si[i]][0]
+                if c + delta_c <= weight_budget:
+                    c += delta_c
+                    si[i] = si[i] + 1
+                    repeat = True
+        if not repeat: break
 
     solution_idx = si
     print(f" -- max(err): {m:.6f}")
     print(f" -- error_norm: {bestnorm:.6f}")
-
 
     # Save strategy
 

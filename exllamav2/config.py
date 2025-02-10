@@ -135,6 +135,7 @@ class ExLlamaV2Config:
     vision_num_key_value_groups: int | None
     vision_hidden_size: int | None
     vision_intermediate_size: int | None
+    vision_merger_intermediate_size: int | None
     vision_hidden_act: str | None
     vision_rope_theta: float | None
     vision_feature_layer: int | None
@@ -152,6 +153,8 @@ class ExLlamaV2Config:
     vision_max_pixels: int | None
     vision_temporal_patch_size: int | None
     vision_max_size: int | None
+    vision_fullatt_block_indexes: list | None
+    vision_window_size: int | None
 
     # Deprecated fields, kept for compatibiltiy
 
@@ -478,6 +481,8 @@ class ExLlamaV2Config:
 
         # TODO: Cleanup & refactor
 
+        self.vision_fullatt_block_indexes = None
+
         if self.vision_model_type is None:
             pass
 
@@ -495,6 +500,7 @@ class ExLlamaV2Config:
             self.vision_feature_layer = read(read_config, int, ["vision_feature_layer"], no_default)
             self.vision_num_layers = read(read_config, int, ["vision_config->num_hidden_layers"], 24)
             self.vision_intermediate_size = read(read_config, int, ["vision_config->intermediate_size"], self.hidden_size)
+            self.vision_merger_intermediate_size = self.vision_intermediate_size
 
             image_processor_type = read(read_prep_config, str, ["image_processor_type"], no_default)
             assert image_processor_type == "PixtralImageProcessor", \
@@ -510,11 +516,29 @@ class ExLlamaV2Config:
             self.vision_num_channels = 3
             self.vision_spatial_merge_size = 1
             self.vision_max_size = 16384
+            self.vision_window_size = None
 
-        elif self.vision_model_type == "qwen2":
+        elif self.vision_model_type in ["qwen2", "qwen2.5"]:
+            image_processor_type = read(read_prep_config, str, ["image_processor_type"], no_default)
+            if self.vision_model_type == "qwen2":
+                self.vision_hidden_size = read(read_config, int, ["vision_config->embed_dim"], no_default)
+                mlp_ratio = read(read_config, int, ["vision_config->mlp_ratio"], None)
+                self.vision_intermediate_size = self.vision_hidden_size * mlp_ratio
+                self.vision_merger_intermediate_size = self.vision_intermediate_size
+                assert image_processor_type == "Qwen2VLImageProcessor", \
+                    f"Wrong image processor type: {image_processor_type}"
+                self.vision_window_size = None
+            elif self.vision_model_type == "qwen2.5":
+                self.vision_hidden_size = read(read_config, int, ["vision_config->hidden_size"], no_default)
+                self.vision_intermediate_size = read(read_config, int, ["vision_config->intermediate_size"], no_default)
+                self.vision_fullatt_block_indexes = read(read_config, list, ["vision_config->fullatt_block_indexes", None])
+                self.vision_window_size = read(read_config, int, ["vision_config->window_size", None])
+                assert image_processor_type == "Qwen2_5_VLImageProcessor", \
+                    f"Wrong image processor type: {image_processor_type}"
+                self.vision_merger_intermediate_size = 5120  # TODO: This doesn't seem to appear in the config anywhere?
+
             self.vision_num_attention_heads = read(read_config, int, ["vision_config->num_heads"], no_default)
             self.vision_num_key_value_heads = self.vision_num_attention_heads
-            self.vision_hidden_size = read(read_config, int, ["vision_config->embed_dim"], no_default)
             self.vision_head_dim = self.vision_hidden_size // self.vision_num_attention_heads
             self.vision_num_key_value_groups = 1
             self.vision_hidden_act = "quickgelu"
@@ -523,12 +547,7 @@ class ExLlamaV2Config:
             patch_size = read(read_config, int, ["vision_config->patch_size"], no_default)
             self.vision_rope_theta = read(read_config, int, ["vision_config->rope_theta"], 10000.0)
             self.vision_num_layers = read(read_config, int, ["vision_config->depth"], no_default)
-            mlp_ratio = read(read_config, int, ["vision_config->mlp_ratio"], no_default)
-            self.vision_intermediate_size = self.vision_hidden_size * mlp_ratio
 
-            image_processor_type = read(read_prep_config, str, ["image_processor_type"], no_default)
-            assert image_processor_type == "Qwen2VLImageProcessor", \
-                f"Wrong image processor type: {image_processor_type}"
             self.vision_image_mean = read(read_prep_config, list, ["image_mean"], no_default)
             self.vision_image_std = read(read_prep_config, list, ["image_std"], no_default)
             assert read(read_prep_config, int, ["patch_size"], no_default) == patch_size, \

@@ -51,6 +51,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
         out_features: int | None = None,
         interm_features: int | None = None,
         merge: int | None = None,
+        pad32: bool = True,
     ):
         super().__init__(model, key, archparams)
         cfg = self.model.config
@@ -98,8 +99,8 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.pre_layernorm = None
             self.post_layernorm = None
 
-        self.up_proj = ExLlamaV2Linear(model, key + km["mlp_up"], in_features, interm_features, ap.mlp_bias, f_key = f_key, f_beg = f_b, f_end = f_c)
-        self.down_proj = ExLlamaV2Linear(model, key + km["mlp_down"], interm_features, out_features, ap.mlp_bias, prescale = cfg.scale_depth)
+        self.up_proj = ExLlamaV2Linear(model, key + km["mlp_up"], in_features, interm_features, ap.mlp_bias, f_key = f_key, f_beg = f_b, f_end = f_c, pad32 = pad32)
+        self.down_proj = ExLlamaV2Linear(model, key + km["mlp_down"], interm_features, out_features, ap.mlp_bias, prescale = cfg.scale_depth, pad32 = pad32)
 
         self.submodules = [self.up_proj,
                            self.down_proj]
@@ -109,7 +110,7 @@ class ExLlamaV2MLP(ExLlamaV2Module):
             self.submodules += [self.post_layernorm]
 
         if ap.mlp_gate:
-            self.gate_proj = ExLlamaV2Linear(model, key + km["mlp_gate"], in_features, interm_features, ap.mlp_bias, f_key = f_key, f_beg = f_a, f_end = f_b)
+            self.gate_proj = ExLlamaV2Linear(model, key + km["mlp_gate"], in_features, interm_features, ap.mlp_bias, f_key = f_key, f_beg = f_a, f_end = f_b, pad32 = pad32)
             self.submodules += [self.gate_proj]
         else:
             self.gate_proj = None

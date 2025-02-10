@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 import numpy as np
 from PIL import Image
 from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer
@@ -86,7 +87,7 @@ def preprocess(
 
     if mode == "image":
         image = torch.from_numpy(flatten_patches).half()
-        return image, new_size
+        return image, new_size, (grid_t, grid_h, grid_w), config.vision_spatial_patch_size ** 2
     else:
         video = torch.from_numpy(flatten_patches).half()
         return video, new_size, (grid_t, grid_h, grid_w), config.vision_spatial_patch_size ** 2
@@ -150,3 +151,50 @@ def position_embeddings(
     sin = sin.unsqueeze(1).repeat(1, 1, 2).contiguous()
 
     return sin, cos
+
+
+def get_window_index(grid_thw, config: ExLlamaV2Config):
+
+    window_index: list = []
+    cu_window_seqlens: list = [0]
+    window_index_id = 0
+    vit_merger_window_size = (
+        config.vision_window_size //
+        config.vision_spatial_merge_size //
+        config.vision_patch_size["height"]
+    )
+
+    for grid_t, grid_h, grid_w in grid_thw:
+        llm_grid_h, llm_grid_w = (
+            grid_h // config.vision_spatial_merge_size,
+            grid_w // config.vision_spatial_merge_size,
+        )
+        index = torch.arange(grid_t * llm_grid_h * llm_grid_w).reshape(grid_t, llm_grid_h, llm_grid_w)
+        pad_h = vit_merger_window_size - llm_grid_h % vit_merger_window_size
+        pad_w = vit_merger_window_size - llm_grid_w % vit_merger_window_size
+        num_windows_h = (llm_grid_h + pad_h) // vit_merger_window_size
+        num_windows_w = (llm_grid_w + pad_w) // vit_merger_window_size
+        index_padded = F.pad(index, (0, pad_w, 0, pad_h), "constant", -100)
+        index_padded = index_padded.reshape(
+            grid_t,
+            num_windows_h,
+            vit_merger_window_size,
+            num_windows_w,
+            vit_merger_window_size,
+        )
+        index_padded = index_padded.permute(0, 1, 3, 2, 4).reshape(
+            grid_t,
+            num_windows_h * num_windows_w,
+            vit_merger_window_size,
+            vit_merger_window_size,
+        )
+        seqlens = (index_padded != -100).sum([2, 3]).reshape(-1)
+        index_padded = index_padded.reshape(-1)
+        index_new = index_padded[index_padded != -100]
+        window_index.append(index_new + window_index_id)
+        cu_seqlens_tmp = seqlens.cumsum(0) * config.vision_spatial_merge_size**2 + cu_window_seqlens[-1]
+        cu_window_seqlens.extend(cu_seqlens_tmp.tolist())
+        window_index_id += (grid_t * llm_grid_h * llm_grid_w).item()
+
+    window_index = torch.cat(window_index, dim  =0)
+    return window_index, cu_window_seqlens

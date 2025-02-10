@@ -356,7 +356,7 @@ class ExLlamaV2ArchParams:
 
         # Qwen2-VL (2, 2.5)
 
-        if arch_string == "Qwen2VLForConditionalGeneration":
+        if arch_string in ["Qwen2VLForConditionalGeneration", "Qwen2_5_VLForConditionalGeneration"]:
             arch_recognized = True
             self.lm.layer_keys += \
                 layer_keys_llama_norms + \
@@ -368,27 +368,44 @@ class ExLlamaV2ArchParams:
             self.lm.mrope = True
             self.lm.rope_freq_half = True
 
-            read_config["vision_config"].update({"model_type": "qwen2"})
             self.vt_prefix = "visual."
-            self.vt.keys.update({
-                "fused_qkv": ".attn.qkv",
-                "attn_o": ".attn.proj",
-                "mlp_gate": None,
-                "mlp_up": ".mlp.fc1",
-                "mlp_down": ".mlp.fc2",
-                "norm_1": ".norm1",
-                "norm_2": ".norm2",
-                "layers": "blocks",
-                "patch_conv": "patch_embed.proj",
-            })
-            self.vt.mlp_gate = False
+            if arch_string == "Qwen2VLForConditionalGeneration":
+                read_config["vision_config"].update({"model_type": "qwen2"})
+                self.vt.keys.update({
+                    "fused_qkv": ".attn.qkv",
+                    "attn_o": ".attn.proj",
+                    "mlp_gate": None,
+                    "mlp_up": ".mlp.fc1",
+                    "mlp_down": ".mlp.fc2",
+                    "norm_1": ".norm1",
+                    "norm_2": ".norm2",
+                    "layers": "blocks",
+                    "patch_conv": "patch_embed.proj",
+                })
+                self.vt.mlp_gate = False
+                self.vt.mlp_act_func = "quickgelu"
+                self.vt.norm = "layernorm"
+            elif arch_string == "Qwen2_5_VLForConditionalGeneration":
+                read_config["vision_config"].update({"model_type": "qwen2.5"})
+                self.vt.keys.update({
+                    "fused_qkv": ".attn.qkv",
+                    "attn_o": ".attn.proj",
+                    "mlp_gate": ".mlp.gate_proj",
+                    "mlp_up": ".mlp.up_proj",
+                    "mlp_down": ".mlp.down_proj",
+                    "norm_1": ".norm1",
+                    "norm_2": ".norm2",
+                    "layers": "blocks",
+                    "patch_conv": "patch_embed.proj",
+                })
+                self.vt.mlp_gate = True
+                self.vt.mlp_act_func = "silu"
+                self.vt.norm = "rmsnorm"
             self.vt.mlp_bias = True
             self.vt.attention_bias_qkv = True
             self.vt.attention_bias_o = True
             self.vt.vision_input_norm = False
             self.vt.vision_conv3d = True
-            self.vt.mlp_act_func = "quickgelu"
-            self.vt.norm = "layernorm"
 
             self.mmp_prefix = "visual.merger."
             self.mmp.keys.update({

@@ -41,11 +41,11 @@ if 'EXLLAMA_NO_FLASH_ATTN' not in os.environ:
             print(" ## Warning: Flash Attention is installed but unsupported GPUs were detected.")
 
         if [2, 2, 1] <= flash_attn_ver < [2, 5, 7]:
-            from flash_attn import flash_attn_func
+            from flash_attn import flash_attn_func, flash_attn_varlen_func
             has_flash_attn = True
 
         if [2, 5, 7] <= flash_attn_ver:
-            from flash_attn import flash_attn_func, flash_attn_with_kvcache
+            from flash_attn import flash_attn_func, flash_attn_varlen_func, flash_attn_with_kvcache
             # import flash_attn_2_cuda as flash_attn_cuda
 
             signature = list(inspect.signature(flash_attn_func).parameters)
@@ -882,7 +882,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
                 k_states = k_states[:, :, -self.sliding_window:, :]
                 v_states = v_states[:, :, -self.sliding_window:, :]
 
-            if attn_params.is_causal():
+            if self.layer_idx in attn_params.block_diag_layers:
+                attn_mask_lr = attn_params.get_block_diag_mask(q_states.device)
+            elif attn_params.is_causal():
                 attn_mask_lr = causal_lower_right(q_len, k_states.shape[2])
             else:
                 attn_mask_lr = attn_params.get_attn_mask(q_states.device)
@@ -904,7 +906,9 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             attn_weights = torch.matmul(q_states, k_states)
 
             attn_weights *= self.scaling
-            if causal:
+            if self.layer_idx in attn_params.block_diag_layers:
+                attn_mask = attn_params.get_block_diag_mask(attn_weights.device)
+            elif causal:
                 attn_mask = attn_params.get_attn_mask(attn_weights.device)
 
             if cfg.attn_logit_softcapping:
@@ -939,14 +943,30 @@ class ExLlamaV2Attention(ExLlamaV2Module):
             if has_flash_attn_with_softcap:
                 flash_kwargs["softcap"] = cfg.attn_logit_softcapping
 
-        attn_output = flash_attn_func(
-            q_states,
-            k_states,
-            v_states,
-            causal = causal,
-            softmax_scale = self.scaling,
-            **flash_kwargs
-        )
+        if self.layer_idx in attn_params.block_diag_layers:
+            q_states = q_states.flatten(start_dim = 0, end_dim = 1)
+            k_states = k_states.flatten(start_dim = 0, end_dim = 1)
+            v_states = v_states.flatten(start_dim = 0, end_dim = 1)
+            max_seqlen = attn_params.get_cu_seqlens_max()
+            cu_seqlens = attn_params.get_cu_seqlens(self.device_idx)
+            attn_output = flash_attn_varlen_func(
+                q_states,
+                k_states,
+                v_states,
+                cu_seqlens,
+                cu_seqlens,
+                max_seqlen,
+                max_seqlen
+            )
+        else:
+            attn_output = flash_attn_func(
+                q_states,
+                k_states,
+                v_states,
+                causal = causal,
+                softmax_scale = self.scaling,
+                **flash_kwargs
+            )
         attn_output = attn_output.reshape((batch_size, q_len, self.num_attention_heads * self.head_dim))
         return attn_output
 

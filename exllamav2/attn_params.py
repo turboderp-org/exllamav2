@@ -21,6 +21,10 @@ class Params:
     alt_rope_embed_dict: dict | None
     rope_offsets: torch.Tensor | None
     non_causal_attn: bool
+    block_diag_layers: set
+    block_diag_mask: torch.Tensor | None
+    cu_seqlens: torch.Tensor | None
+    cu_seqlens_max: int | None
 
     def __init__(
         self,
@@ -65,6 +69,11 @@ class Params:
         self.past_lens_tensor = None
         self.past_len_tp = None
         self.paged = paged
+
+        self.block_diag_layers = set()
+        self.block_diag_mask = None
+        self.cu_seqlens = None
+        self.cu_seqlens_max = None
 
     def is_causal(self) -> bool:
         return self.input_mask is None
@@ -164,6 +173,31 @@ class Params:
             self.rope_offsets = safe_move_tensor(self.rope_offsets, device_idx, non_blocking = True)
         return self.rope_offsets
 
+    def get_cu_seqlens(self, device: int) -> torch.Tensor | None:
+        if self.cu_seqlens is None:
+            return None
+        if self.cu_seqlens.device.index != device:
+            self.cu_seqlens = safe_move_tensor(self.cu_seqlens, device, non_blocking = True)
+        return self.cu_seqlens
+
+    def get_cu_seqlens_max(self) -> torch.Tensor | None:
+        assert self.cu_seqlens is not None
+        if self.cu_seqlens_max is not None:
+            return self.cu_seqlens_max
+        self.cu_seqlens_max = (self.cu_seqlens[1:] - self.cu_seqlens[:-1]).max().item()
+        return self.cu_seqlens_max
+
+    def get_block_diag_mask(self, device: int) -> torch.Tensor | None:
+        if self.block_diag_mask is None:
+            csl = self.get_cu_seqlens(device)
+            if csl is None:
+                return None
+            positions = torch.arange(csl[-1], device = csl.device)
+            labels = torch.searchsorted(csl[1:], positions, right = True)
+            self.block_diag_mask = labels.unsqueeze(0) == labels.unsqueeze(1).repeat(self.batch_size)
+        if self.block_diag_mask.device.index != device:
+            self.block_diag_mask = safe_move_tensor(self.block_diag_mask, device, non_blocking = True)
+        return self.block_diag_mask
 
 
 class PagedParams(Params):

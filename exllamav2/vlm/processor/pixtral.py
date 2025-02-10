@@ -44,7 +44,7 @@ def preprocess(
 
     image = image.transpose(2, 0, 1)
     image = torch.from_numpy(image).half()
-    return image, new_size
+    return image, new_size, None, None
 
 def postprocess(
     model: ExLlamaV2,

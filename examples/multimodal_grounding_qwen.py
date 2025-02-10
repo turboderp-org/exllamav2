@@ -51,7 +51,7 @@ class Model:
     current_image: Image or None = None
     current_description: str
 
-    def __init__(self, model_directory):
+    def __init__(self, model_directory, bbox_mode: str):
         self.model_directory = model_directory
         self.config = None
         self.vision_model = None
@@ -61,17 +61,22 @@ class Model:
         self.current_image = None
         self.current_emb = None
         self.current_description = ""
+        bbox_funcs = {
+            "qwen2": self.get_grounding_bb_qwen2,
+            "qwen25": self.get_grounding_bb_qwen25,
+        }
+        self.bbox_func = bbox_funcs[bbox_mode]
 
     def load(self):
         """Load and initialize the things"""
         self.config = ExLlamaV2Config(self.model_directory)
-        self.config.max_seq_len = 16384
+        self.config.max_seq_len = 8192
 
         self.vision_model = ExLlamaV2VisionTower(self.config)
         self.vision_model.load(progress = True)
 
         self.model = ExLlamaV2(self.config)
-        self.cache = ExLlamaV2Cache(self.model, lazy = True, max_seq_len = 16384)
+        self.cache = ExLlamaV2Cache(self.model, lazy = True, max_seq_len = 32768)
         self.model.load_autosplit(self.cache, progress = True)
         self.tokenizer = ExLlamaV2Tokenizer(self.config)
 
@@ -148,6 +153,13 @@ class Model:
                 lastupdate = time.time()
                 settext_fn(text)
                 update_fn()
+#
+#         text = \
+# """And you may find yourself living in a shotgun shack
+# And you may find yourself in another part of the world
+# And you may find yourself behind the wheel of a large automobile
+# And you may find yourself in a beautiful house, with a beautiful wife
+# And you may ask yourself, "Well, how did I get here?\""""
 
         settext_fn(text)
         update_fn()
@@ -155,7 +167,7 @@ class Model:
         print("Image description from model:")
         print(text)
 
-    def get_grounding_bb(self, start, end) -> tuple:
+    def get_grounding_bb_qwen2(self, start, end) -> tuple:
         """
         Prompt the model again and try to extraxt the bounding box of the image details indicated by selected portion
         of the description. We do this by repeating the exact same prompt up to and including the selected text, but
@@ -208,6 +220,55 @@ class Model:
             a, b = None, None
 
         return a, b
+
+    def get_grounding_bb_qwen25(self, start, end) -> tuple:
+        """
+        Qwen2.5 works the same way, except the coordinates are no longer normalized and the format is:
+        "(x0,y0,x1,y1)"
+        """
+
+        if start >= end:
+            return None, None
+
+        # Including leading space
+        if start > 0 and self.current_description[start - 1] == " ":
+            start -= 1
+
+        # Repeat the same prompt up to the selection, with grounding tokens added
+        prompt = self.get_prompt()
+        prompt += self.current_description[:start]
+        prompt += "<|object_ref_start|>"
+        prompt += self.current_description[start:end]
+        prompt += "<|object_ref_end|><|box_start|>("
+
+        bb_string, res = self.generator.generate(
+            prompt = prompt,
+            add_bos = True,
+            max_new_tokens = 28,
+            stop_conditions = [self.tokenizer.single_id("<|box_end|>")],
+            gen_settings = ExLlamaV2Sampler.Settings.greedy(),
+            embeddings = [self.current_emb],
+            completion_only = True,
+            return_last_results = True,  # debug purposes
+        )
+        bb_string = "(" + bb_string
+
+        print(f"Generation: {bb_string}")
+        pprint.pprint(res, indent = 4)
+
+        # BB string is in the format "(x0,y0,x1,y1)" with integer coordinates
+
+        s = self.current_image.size
+        try:
+            d = tuple(map(int, bb_string.strip("()").split(",")))
+            a = (d[0] / s[0], d[1] / s[1])
+            b = (d[2] / s[0], d[3] / s[1])
+        except:
+            print("No bounding box could be determined")
+            a, b = None, None
+
+        return a, b
+
 
 
 class GroundingDemo(QMainWindow):
@@ -472,7 +533,7 @@ class GroundingDemo(QMainWindow):
 
         print(f"Selected span: {start}, {end}")
         print(f"Selected text: {repr(self.model.current_description[start:end])}")
-        a, b = self.model.get_grounding_bb(start, end)
+        a, b = self.model.bbox_func(start, end)
         self.image_label.set_bounding_box(a, b)
 
 
@@ -481,9 +542,14 @@ class GroundingDemo(QMainWindow):
 #   https://huggingface.co/turboderp/Qwen2-VL-7B-Instruct-exl2
 
 def main():
-    model_dir = "/mnt/str/models/qwen2-vl-7b-instruct-exl2/6.0bpw"
+
+    # model_dir = "/mnt/str/models/qwen2-vl-7b-instruct-exl2/6.0bpw"
+    # bbox_mode = "qwen25"
+    model_dir = "/mnt/str/models/qwen2.5-vl-7b-instruct-exl2/6.0bpw"
+    bbox_mode = "qwen25"
+
     app = QApplication(sys.argv)
-    model = Model(model_dir)
+    model = Model(model_dir, bbox_mode)
     model.load()
     window = GroundingDemo(model, model_dir)
     window.show()

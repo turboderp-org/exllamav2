@@ -4,6 +4,7 @@ import os, sys
 import threading
 
 import torch
+import torch.nn.functional as F
 from exllamav2 import ExLlamaV2, ExLlamaV2Tokenizer
 from exllamav2.conv import ExLlamaV2Conv
 from exllamav2.rmsnorm import ExLlamaV2RMSNorm
@@ -44,7 +45,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             self.postprocess_func = pixtral.postprocess
             self.video_preprocess_func = None
             self.video_postprocess_func = None
-        elif cfg.vision_model_type == "qwen2":
+        elif cfg.vision_model_type in ["qwen2", "qwen2.5"]:
             self.preprocess_func = qwen2.preprocess
             self.postprocess_func = qwen2.postprocess
             self.video_preprocess_func = qwen2.preprocess
@@ -76,7 +77,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
 
             self.position_emb_func = pixtral.position_embeddings
 
-        elif cfg.vision_model_type == "qwen2":
+        elif cfg.vision_model_type in ["qwen2", "qwen2.5"]:
             self.p_maxedge = cfg.vision_max_size
             dim = cfg.vision_head_dim // 2
             max_seqlen = int(math.ceil(cfg.vision_max_size / cfg.vision_spatial_patch_size))
@@ -130,7 +131,7 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         for layer_idx in range(self.config.vision_num_layers):
             layer_key = cfg.arch.vt_prefix + km["layers"] + f".{layer_idx}"
             attn = ExLlamaV2Attention(self, layer_key, layer_idx, archparams = self.archparams)
-            mlp = ExLlamaV2MLP(self, layer_key, layer_idx, archparams = self.archparams)
+            mlp = ExLlamaV2MLP(self, layer_key, layer_idx, archparams = self.archparams, pad32 = False)
             self.modules += [attn, mlp]
 
         # Multimodal projection
@@ -143,10 +144,11 @@ class ExLlamaV2VisionTower(ExLlamaV2):
             archparams = cfg.arch.mmp,
             in_features = cfg.vision_hidden_size * merge,
             out_features = cfg.hidden_size,
-            interm_features = cfg.vision_intermediate_size,
+            interm_features = cfg.vision_merger_intermediate_size,
             has_norm = True,
             has_residual = False,
             merge = merge,
+            pad32 = False,
         )
         self.modules += [mmp]
 
@@ -199,6 +201,19 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         )
 
         attn_params = ExLlamaV2Attention.Params(non_causal_attn = True)
+        if self.config.vision_window_size:
+            attn_params.block_diag_layers = set([
+                l for l in range(self.config.vision_num_layers)
+                if l not in self.config.vision_fullatt_block_indexes
+            ])
+
+            thw_grid_t = torch.tensor(list(thw_grid), dtype = torch.int).unsqueeze(0)
+            window_index, csl = qwen2.get_window_index(thw_grid_t, self.config)
+            csl = torch.tensor(csl, device = hidden_states.device, dtype = torch.int)
+            csl = torch.unique_consecutive(csl)
+            attn_params.cu_seqlens = csl
+        else:
+            window_index = None
 
         device = self.modules[0].device_idx
         for idx, module in enumerate(self.modules):
@@ -230,12 +245,32 @@ class ExLlamaV2VisionTower(ExLlamaV2):
                 hidden_states,
                 attn_params = attn_params,
                 **kwargs | {
-                    "alt_rope_embedding": (cos, sin)
+                    "alt_rope_embedding": (cos, sin),
                 }
             )
 
             if thw_grid is not None and isinstance(module, ExLlamaV2Attention):
                 hidden_states = hidden_states.view(pa_shape)
+
+            if  window_index is not None and idx == 0:
+                sh = hidden_states.shape
+                unit = self.config.vision_spatial_merge_size ** 2
+                seq_len = hidden_states.shape[0] * hidden_states.shape[1]
+                hidden_states = hidden_states.reshape(seq_len // unit, unit, -1)
+                hidden_states = hidden_states[window_index, :, :]
+                hidden_states = hidden_states.reshape(sh)
+                sh = sin.shape
+                seq_len = sin.shape[0]
+                sin = sin.reshape(seq_len // unit, unit, -1)
+                sin = sin[window_index[:seq_len // unit], :, :]
+                sin = sin.reshape(sh)
+                cos = cos.reshape(seq_len // unit, unit, -1)
+                cos = cos[window_index[:seq_len // unit], :, :]
+                cos = cos.reshape(sh)
+
+        if window_index is not None:
+            reverse_indices = torch.argsort(window_index)
+            hidden_states = hidden_states[:, reverse_indices]
 
         return hidden_states
 
@@ -278,13 +313,14 @@ class ExLlamaV2VisionTower(ExLlamaV2):
         assert all(s <= maxsize for s in original_size), \
             f"Input image exceeds maximum size of {maxsize} x {maxsize}"
 
-        image_tensor, prep_image_size = self.preprocess_func(self.config, image)
+        image_tensor, prep_image_size, grid_thw, _ = self.preprocess_func(self.config, image)
         features_x = prep_image_size[0] // self.config.vision_patch_size["width"]
         features_y = prep_image_size[1] // self.config.vision_patch_size["height"]
 
         embedding_tensor = self.process(
             image_tensor,
-            (features_y, features_x)
+            (features_y, features_x),
+            thw_grid = grid_thw
         )
 
         if embeddings_cpu:

@@ -238,7 +238,6 @@ std::vector<float> sample_basic
 
         if (num_probs || skew != 0.0f)
         {
-            num_candidates = pre_sort_descending(num_candidates, temp_probs, temp_indices);
             sort_descending(num_candidates, temp_probs, temp_indices, num_probs);
         }
 
