@@ -72,6 +72,7 @@ parser.add_argument("-cq8", "--cache_q8", action = "store_true", help = "Use Q8 
 
 parser.add_argument("-ngram", "--ngram_decoding", action = "store_true", help = "Use n-gram speculative decoding")
 
+parser.add_argument("-mli", "--mli", action = "store_true", help = "Enable multi line input")
 parser.add_argument("-pt", "--print_timings", action = "store_true", help = "Output timings/stats after each prompt")
 parser.add_argument("-amnesia", "--amnesia", action = "store_true", help = "Forget context after every response")
 
@@ -301,7 +302,22 @@ while True:
     # Get user prompt
 
     print()
-    up = input(col_user + username + ": " + col_default).strip()
+    print(col_user + username + ": " + col_default, end='', flush=True)
+
+    # multi-lin support
+    if args.mli:
+        content = sys.stdin.read().rstrip()
+    else:
+        content = input().strip()
+
+    # clear context
+    if content == "clear":
+        user_prompts = []
+        responses_ids = []
+        print(col_user + "Context cleared." + col_default, end='', flush=True)
+        continue
+
+    up = username + ": " + content
     print()
 
     # Add to context
