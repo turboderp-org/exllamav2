@@ -353,6 +353,12 @@ while True:
         tokens = res["chunk_token_ids"]
 
         if len(response_text) == 0: chunk = chunk.lstrip()
+
+        # trim thinking from context for qwq model
+        if args.mode == "qwq" and chunk == "</think>":
+            chunk = "end of thinking"
+            responses_ids[-1] = torch.empty((1, 0), dtype = torch.long)
+
         response_text += chunk
         responses_ids[-1] = torch.cat([responses_ids[-1], tokens], dim = -1)
 

@@ -210,6 +210,51 @@ class PromptFormat_codellama(PromptFormat_llama):
             """You are a helpful coding assistant. Always answer as helpfully as possible."""
 
 
+class PromptFormat_qwq(PromptFormat):
+
+    description = "Qwen QwQ format"
+
+    def __init__(self):
+        super().__init__()
+        pass
+
+    def default_system_prompt(self):
+        return \
+            f"""You are a useful coding assistant, who thinks before answering."""
+
+    def first_prompt(self, sysprompt):
+        r = ""
+        if sysprompt:
+            r += \
+                """<|im_start|>system\n""" + \
+                """<|system_prompt|>""" + \
+                """<|im_end|>\n"""
+        r += \
+            """<|im_start|>user\n""" + \
+            """<|user_prompt|><|im_end|>\n""" + \
+            """<|im_start|>assistant\n<think>\n"""
+        return r
+
+    def subs_prompt(self):
+        return \
+            """<|im_end|>\n""" + \
+            """<|im_start|>user\n""" + \
+            """<|user_prompt|><|im_end|>\n""" + \
+            """<|im_start|>assistant\n<think>\n"""
+
+    def stop_conditions(self, tokenizer):
+        return \
+            [tokenizer.eos_token_id,
+             tokenizer.single_id("<|im_end|>"),
+             """<|im_end|>"""]
+
+    def encoding_options(self):
+        return False, False, True
+
+    def print_extra_newline(self):
+        return True
+
+
 class PromptFormat_chatml(PromptFormat):
 
     description = "ChatML format, as used by e.g. (Mistral)Orca"
@@ -635,6 +680,7 @@ prompt_formats = \
     "llama": PromptFormat_llama,
     "llama3": PromptFormat_llama3,
     "codellama": PromptFormat_codellama,
+    "qwq": PromptFormat_qwq,
     "chatml": PromptFormat_chatml,
     "tinyllama": PromptFormat_tinyllama,
     "zephyr": PromptFormat_zephyr,
