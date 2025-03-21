@@ -556,6 +556,7 @@ class ExLlamaV2DynamicGenerator:
         filter_prefer_eos: bool = False,
         return_last_results: bool = False,
         embeddings: list[ExLlamaV2MMEmbedding] | list[list[ExLlamaV2MMEmbedding]] | None = None,
+        banned_strings: list | None = None,
         **kwargs
     ):
         """
@@ -616,6 +617,9 @@ class ExLlamaV2DynamicGenerator:
 
         :param embeddings:
             Optional list of ExLlamaV2MMEmbeddings to use for, or list of lists for batched generation
+
+        :param banned_strings:
+            Optional list of strings to exclude from the output
 
         :return:
             Completion(s): (str or list[str] depending on the type of the input prompt argument)
@@ -685,7 +689,8 @@ class ExLlamaV2DynamicGenerator:
                 filter_prefer_eos = filter_prefer_eos,
                 token_healing = token_healing,
                 decode_special_tokens = decode_special_tokens,
-                embeddings = embeddings[idx] or []
+                embeddings = embeddings[idx] or [],
+                banned_strings = banned_strings
             )
 
             if seed is not None: seed += 1
