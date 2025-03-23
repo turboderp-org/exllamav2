@@ -392,8 +392,8 @@ class TPContext:
         for dev in range(self.num_devices):
             if dev in self.all_devs:
                 devctx = self.model.get_device_context(dev)
-                self.sin.append(devctx.sin)
-                self.cos.append(devctx.cos)
+                self.sin.append(torch.cat(devctx.sin, 0))
+                self.cos.append(torch.cat(devctx.cos, 0))
             else:
                 self.sin.append(none_tensor)
                 self.cos.append(none_tensor)
