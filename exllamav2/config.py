@@ -533,7 +533,7 @@ class ExLlamaV2Config:
                 self.vision_intermediate_size = read(read_config, int, ["vision_config->intermediate_size"], no_default)
                 self.vision_fullatt_block_indexes = read(read_config, list, ["vision_config->fullatt_block_indexes", None])
                 self.vision_window_size = read(read_config, int, ["vision_config->window_size", None])
-                assert image_processor_type == "Qwen2_5_VLImageProcessor", \
+                assert image_processor_type == "Qwen2_5_VLImageProcessor" or image_processor_type == "Qwen2VLImageProcessor", \
                     f"Wrong image processor type: {image_processor_type}"
                 self.vision_merger_intermediate_size = 5120  # TODO: This doesn't seem to appear in the config anywhere?
 
