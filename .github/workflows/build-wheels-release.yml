@@ -31,6 +31,7 @@ jobs:
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.10', cuda: '12.1.0', rocm:    '', torch: '2.5.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.10', cuda: '11.8.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.10', cuda: '12.4.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+         - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.10', cuda: '12.8.0', rocm:    '', torch: '2.7.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
 
         # Python 3.11
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.11', cuda: '11.8.0', rocm:    '', torch: '2.3.1', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
@@ -41,6 +42,7 @@ jobs:
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.11', cuda: '12.1.0', rocm:    '', torch: '2.5.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.11', cuda: '11.8.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.11', cuda: '12.4.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+         - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.11', cuda: '12.8.0', rocm:    '', torch: '2.7.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
 
         # Python 3.12
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.12', cuda: '11.8.0', rocm:    '', torch: '2.3.1', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
@@ -51,12 +53,14 @@ jobs:
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.12', cuda: '12.1.0', rocm:    '', torch: '2.5.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.12', cuda: '11.8.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.12', cuda: '12.4.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+         - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.12', cuda: '12.8.0', rocm:    '', torch: '2.7.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
 
         # Python 3.13
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.13', cuda: '11.8.0', rocm:    '', torch: '2.5.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.13', cuda: '12.1.0', rocm:    '', torch: '2.5.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.13', cuda: '11.8.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.13', cuda: '12.4.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+         - { artname: 'wheel', os: ubuntu-20.04, pyver: '3.13', cuda: '12.8.0', rocm:    '', torch: '2.7.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
 
         # Windows 2022 CUDA
 
@@ -69,6 +73,7 @@ jobs:
          - { artname: 'wheel', os: windows-2022, pyver: '3.10', cuda: '12.1.0', rocm:    '', torch: '2.5.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: windows-2022, pyver: '3.10', cuda: '11.8.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: windows-2022, pyver: '3.10', cuda: '12.4.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+         - { artname: 'wheel', os: windows-2022, pyver: '3.10', cuda: '12.8.0', rocm:    '', torch: '2.7.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
 
         # Python 3.11
          - { artname: 'wheel', os: windows-2022, pyver: '3.11', cuda: '11.8.0', rocm:    '', torch: '2.3.1', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
@@ -79,6 +84,7 @@ jobs:
          - { artname: 'wheel', os: windows-2022, pyver: '3.11', cuda: '12.1.0', rocm:    '', torch: '2.5.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: windows-2022, pyver: '3.11', cuda: '11.8.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: windows-2022, pyver: '3.11', cuda: '12.4.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+         - { artname: 'wheel', os: windows-2022, pyver: '3.11', cuda: '12.8.0', rocm:    '', torch: '2.7.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
 
         # Python 3.12
          - { artname: 'wheel', os: windows-2022, pyver: '3.12', cuda: '11.8.0', rocm:    '', torch: '2.3.1', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
@@ -89,10 +95,12 @@ jobs:
          - { artname: 'wheel', os: windows-2022, pyver: '3.12', cuda: '12.1.0', rocm:    '', torch: '2.5.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: windows-2022, pyver: '3.12', cuda: '11.8.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: windows-2022, pyver: '3.12', cuda: '12.4.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+         - { artname: 'wheel', os: windows-2022, pyver: '3.12', cuda: '12.8.0', rocm:    '', torch: '2.7.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
 
         # Python 3.13
          - { artname: 'wheel', os: windows-2022, pyver: '3.13', cuda: '11.8.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
          - { artname: 'wheel', os: windows-2022, pyver: '3.13', cuda: '12.4.0', rocm:    '', torch: '2.6.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+         - { artname: 'wheel', os: windows-2022, pyver: '3.13', cuda: '12.8.0', rocm:    '', torch: '2.7.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
 
         # Ubuntu 20.04 ROCm
 
