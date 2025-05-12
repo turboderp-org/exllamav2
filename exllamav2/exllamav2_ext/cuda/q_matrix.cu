@@ -603,9 +603,18 @@ bool QMatrix::make_sequential(const uint32_t* cpu_g_idx, cudaStream_t stream)
         return false;
     }
 
+    // Zero out the allocated memory
+    size_t mem_size = (height / 8) * width * sizeof(uint32_t);
+    err = cudaMemset(cuda_new_qweight, 0, mem_size);
+    if (err != cudaSuccess) {;;;
+        printf("CUDA memset failed: %s\n", cudaGetErrorString(err));
+        cudaFree(cuda_new_qweight);  // Free the allocated memory in case of error
+        return err;
+    }
+
     uint32_t* cpu_g_idx_map = (uint32_t*) calloc(groups, sizeof(uint32_t));
-    uint32_t* cpu_x_map = (uint32_t*) malloc(height * sizeof(uint32_t));
-    uint32_t* cpu_x_map_inv = (uint32_t*) malloc(height * sizeof(uint32_t));
+    uint32_t* cpu_x_map = (uint32_t*) calloc(1, height * sizeof(uint32_t));
+    uint32_t* cpu_x_map_inv = (uint32_t*) calloc(1, height * sizeof(uint32_t));
 
     // Group histogram
 

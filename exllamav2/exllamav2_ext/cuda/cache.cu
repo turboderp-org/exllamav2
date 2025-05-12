@@ -165,8 +165,8 @@ __global__ void fp16_to_q_kv_paged_kernel
 
     int page = block_table[pages_per_seq * y + x];
     int seqlen = cache_seqlens[y];
-    int vx_a = page_size * x;
-    int px_a = seqlen - vx_a;
+    int vx_a = (int64_t)page_size * x;
+    int px_a = (int64_t)seqlen - vx_a;
     int px_b = px_a + q_len;
 
     if (dim % BLOCKSIZE_Q)
@@ -174,7 +174,7 @@ __global__ void fp16_to_q_kv_paged_kernel
         while ((px_a * dim) % BLOCKSIZE_Q) px_a--;
         while ((px_b * dim) % BLOCKSIZE_Q) px_b++;
     }
-
+    
     px_a = max(px_a, 0);
     px_b = min(px_b, page_size);
 
@@ -346,7 +346,7 @@ __global__ void q_to_fp16_kv_paged_kernel
     int seqlen = cache_seqlens[y];
     if (!seqlen) return;
 
-    int vx_a = page_size * x;
+    int vx_a = (int64_t)page_size * x;
     int vx_b = min(vx_a + page_size, seqlen);
 
     if (dim < BLOCKSIZE_Q)
