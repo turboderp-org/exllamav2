@@ -31,7 +31,7 @@ void stloader_read
     }
     else
     {
-        load_buffer = (uint8_t*) malloc(size);
+        load_buffer = (uint8_t*) calloc(1, size);
         TORCH_CHECK(load_buffer, "Can't allocate buffer for tensor");
         cuda_buffer = (uint8_t*) target.data_ptr();
         cudaSetDevice(device.value().index());
