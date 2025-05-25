@@ -319,6 +319,7 @@ class ExLlamaV2ArchParams:
                 layer_keys_llama_mlp
             self.lm.expect_keys += \
                 expect_keys_llama
+            self.lm.supports_tp = True
 
             self.vt_prefix = "vision_tower."
             self.vt.keys.update({
