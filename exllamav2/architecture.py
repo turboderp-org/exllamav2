@@ -479,6 +479,7 @@ class ExLlamaV2ArchParams:
             self.lm.attention_bias_qkv = True
             self.lm.mrope = True
             self.lm.rope_freq_half = True
+            self.lm.supports_tp = True
 
             self.vt_prefix = "visual."
             if arch_string == "Qwen2VLForConditionalGeneration":
