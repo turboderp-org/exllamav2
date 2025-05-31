@@ -351,16 +351,24 @@ class TPContext:
         return bc_tensors
 
 
-    def copy_pinned(
-        self,
-        buffer: int,
-        inputs: torch.Tensor
-    ):
+#    def copy_pinned(
+#        self,
+#        buffer: int,
+#        inputs: torch.Tensor
+#    ):
+#        pt = self.pinned_temp[buffer][:inputs.numel()]
+#        pt = pt.view(inputs.shape)
+#        pt.copy_(inputs)
+#        return pt
+        
+    def copy_pinned(self, buffer: int, inputs: torch.Tensor):
         pt = self.pinned_temp[buffer][:inputs.numel()]
         pt = pt.view(inputs.shape)
-        pt.copy_(inputs)
-        return pt
 
+        # Bypass PyTorch entirely - direct memory copy
+        import ctypes
+        ctypes.memmove(pt.data_ptr(), inputs.data_ptr(), inputs.numel() * inputs.element_size())
+        return pt        
 
     def add_residual(
         self,
