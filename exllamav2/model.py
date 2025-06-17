@@ -205,32 +205,31 @@ class ExLlamaV2:
         reserve_bytes_attn = [0 for a in allocation]
         fixed_bytes = [0 for a in allocation]
 
-        current_idx = 0
-        for idx, module in enumerate(self.modules):
+        # Start from the last device index
+        current_idx = len(allocation_bytes) - 1
+        for idx, module in reversed(list(enumerate(self.modules))):
 
             # Special case for token embeddings on CPU
-
             if isinstance(module, ExLlamaV2Embedding) and embed_cpu:
-
                 module.set_device_idx(-1)
                 continue
 
             # Special case for attention
-
             attn_bytes_current = 0
-            if isinstance(module, ExLlamaV2Attention): attn_bytes_current = module.temp_attn_size()
+            if isinstance(module, ExLlamaV2Attention):
+                attn_bytes_current = module.temp_attn_size()
 
-            # Advance current_idx until module fits in allocation
-
+            # Move current_idx backward until module fits in allocation
             footprint = module.weight_footprint()   # Footprint, in bytes
             scratch = module.scratch_space()        # Scratch space required by module
 
             while True:
-                assert current_idx < len(allocation_bytes), "Insufficient space in device allocation"
+                assert current_idx >= 0, "Insufficient space in device allocation"
                 dev_scratch = max(scratch, reserve_bytes[current_idx])
                 dev_scratch_attn = max(attn_bytes_current, reserve_bytes_attn[current_idx])
-                if footprint + dev_scratch + dev_scratch_attn <= allocation_bytes[current_idx]: break
-                current_idx += 1
+                if footprint + dev_scratch + dev_scratch_attn <= allocation_bytes[current_idx]:
+                    break
+                current_idx -= 1
 
             # Size for fixed tensors
 
