@@ -193,6 +193,8 @@ class ExLlamaV2BaseGenerator:
                                                           return_offsets = True,
                                                           add_bos = add_bos)
 
+            pre_ids = torch.empty(*ids.shape[:-1], 0)
+
             if prompts_identical:
                 position_offsets = None
 
@@ -268,6 +270,7 @@ class ExLlamaV2BaseGenerator:
             ExLlamaV2Sampler.sample(
                 logits,
                 gen_settings,
+                pre_ids,
                 self.sequence_ids,
                 random.random(),
                 self.tokenizer,
