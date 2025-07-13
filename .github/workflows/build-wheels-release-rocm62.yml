@@ -113,7 +113,7 @@ jobs:
           # --- Install dependencies
 
           uv pip install torch==${{ matrix.torch }} --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
-          uv pip install --upgrade build setuptools==69.5.1 wheel packaging ninja safetensors sentencepiece tokenizers numpy
+          uv pip install --upgrade build setuptools==69.5.1 wheel packaging ninja safetensors tokenizers numpy
 
           # --- Build wheel 
 
