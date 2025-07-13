@@ -19,7 +19,7 @@ def preprocess(
     assert "longest_edge" in config.vision_size, \
         "preprocessing size must specify longest_edge"
 
-    patch_size = tuple(config.vision_patch_size[d] for d in ["height", "width"])
+    patch_size = tuple(config.vision_patch_size[d] * 2 for d in ["height", "width"])
     longest_edge = config.vision_size["longest_edge"]
     resample = Image.Resampling(config.vision_resample)
     image_mean = tuple(config.vision_image_mean)

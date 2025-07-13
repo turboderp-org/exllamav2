@@ -36,7 +36,7 @@ def size_to_longest_edge_and_patch_size(
 
     ratio = max(input_size[0] / max_size[0], input_size[1] / max_size[1])
     if ratio > 1:
-        output_size = tuple(int(np.ceil(d / ratio)) for d in input_size)
+        output_size = tuple(max(1, int(np.floor(d / ratio))) for d in input_size)
     else:
         output_size = input_size
 
