@@ -89,11 +89,13 @@ class ExLlamaV2Module:
 
         for v, ks in submap_i.items():
             stfile = STFile.open(v, keymap = self.model.config.arch.keymap)
-            for k in ks:
-                if measure:
+            if measure:
+                for k in ks:
                     size += stfile.measure(key + "." + k)
-                else:
-                    tensors[k] = stfile.get_tensor(key + "." + k, device = self.device() if not cpu else "cpu")
+            else:
+                loaded = stfile.get_tensors([key + "." + k for k in ks], device = self.device() if not cpu else "cpu")
+                for k, tensor in zip(ks, loaded.values()):
+                    tensors[k] = tensor
 
         return size if measure else tensors
 

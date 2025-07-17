@@ -166,3 +166,47 @@ class STFile:
         if out_dtype:
             tensor = tensor.to(out_dtype)
         return tensor
+
+    def get_tensors(
+        self,
+        keys: list,
+        device,
+        out_dtypes = None
+    ) -> dict:
+        """
+        Batch load multiple tensors from file.
+
+        :param keys:
+            List of tensor names
+
+        :param device:
+            Target device
+
+        :param out_dtypes:
+            Optional list of output dtypes (or None for each)
+
+        :return:
+            dict of {key: tensor}
+        """
+        tensors = {}
+        if out_dtypes is None:
+            out_dtypes = [None] * len(keys)
+        for key, out_dtype in zip(keys, out_dtypes):
+            h = self.header[key]
+            dtype, esize = convert_dtype(h["dtype"])
+            beg, end = h["data_offsets"]
+            size = end - beg
+            shape = h["shape"]
+            tensor = torch.empty(shape, dtype = dtype, device = device)
+            torch.cuda.synchronize()
+            assert tensor.is_contiguous, "Non-contiguous tensor"
+            ext_c.stloader_read(
+                self.filename,
+                beg + self.header_size,
+                size,
+                tensor
+            )
+            if out_dtype:
+                tensor = tensor.to(out_dtype)
+            tensors[key] = tensor
+        return tensors
