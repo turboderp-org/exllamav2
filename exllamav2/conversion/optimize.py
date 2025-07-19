@@ -180,7 +180,8 @@ def optimize(job, save_fn, model):
             bpw = p["total_bits"] / n
             err = 1 - p["accuracy"]
             print(f" --   {k:50} {bpw:1.4f} bpw - exp. error: {err:1.8f}")
-            logerr += math.log(err)
+            if err != 0:
+                logerr += math.log(err)
             maxerr = max(err, maxerr)
 
     print(f" -- sum(log(err)): {logerr:.6f}")
