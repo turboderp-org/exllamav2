@@ -2,7 +2,7 @@
 
 void print_global_mem(const half* ptr, int rows, int columns, int stride)
 {
-    half* temp = (half*) malloc(rows * columns * sizeof(half));
+    half* temp = (half*) calloc(1, rows * columns * sizeof(half));
 
     cudaDeviceSynchronize();
     cudaMemcpyAsync(temp, ptr, rows * columns * sizeof(half), cudaMemcpyDeviceToHost);
