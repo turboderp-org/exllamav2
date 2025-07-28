@@ -126,7 +126,7 @@ class ExLlamaV2Sampler:
             c.token_presence_penalty = self.token_presence_penalty
             c.token_bias = None
             c.dry_allowed_length = self.dry_allowed_length
-            c.dry_base = self.dry_allowed_length
+            c.dry_base = self.dry_base
             c.dry_multiplier = self.dry_multiplier
             c.dry_sequence_breakers = self.dry_sequence_breakers
             c.dry_max_ngram = self.dry_max_ngram
