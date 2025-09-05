@@ -263,9 +263,9 @@ class PagedParams(Params):
     def get_attn_mask(self, device, force: bool = False):
         raise NotImplementedError()
 
-    def get_block_index(self, device) -> torch.Tensor:
-        if self.block_index.device != device:
-            self.block_index = safe_move_tensor(self.block_index, device)
+    def get_block_index(self, device_idx: int) -> torch.Tensor:
+        if self.block_index.device.index != device_idx:
+            self.block_index = safe_move_tensor(self.block_index, device_idx, non_blocking = True)
         return self.block_index
 
     def get_cache_seqlens(self, device_idx: int) -> torch.Tensor:
