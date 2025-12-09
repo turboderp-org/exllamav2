@@ -1,4 +1,4 @@
-name: Build Wheels & Release ROCm62
+name: Build Wheels & Release ROCm latest torch
 
 on:
   workflow_dispatch:
@@ -22,28 +22,11 @@ jobs:
 
         # Ubuntu 22.04 CUDA
 
-        # ROCm 6.2
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.10', cuda: '',       rocm: '6.2', torch: '2.5.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.11', cuda: '',       rocm: '6.2', torch: '2.5.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.12', cuda: '',       rocm: '6.2', torch: '2.5.0', cudaarch: ''                                    }
-
-        # ROCm 6.2.4
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.10', cuda: '',       rocm: '6.2.4', torch: '2.6.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.11', cuda: '',       rocm: '6.2.4', torch: '2.6.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.12', cuda: '',       rocm: '6.2.4', torch: '2.6.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.13', cuda: '',       rocm: '6.2.4', torch: '2.6.0', cudaarch: ''                                    }
-
-        # ROCm 6.3
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.10', cuda: '',       rocm: '6.3', torch: '2.7.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.11', cuda: '',       rocm: '6.3', torch: '2.7.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.12', cuda: '',       rocm: '6.3', torch: '2.7.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.13', cuda: '',       rocm: '6.3', torch: '2.7.0', cudaarch: ''                                    }
-
         # ROCm 6.4
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.10', cuda: '',       rocm: '6.4', torch: '2.8.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.11', cuda: '',       rocm: '6.4', torch: '2.8.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.12', cuda: '',       rocm: '6.4', torch: '2.8.0', cudaarch: ''                                    }
-         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.13', cuda: '',       rocm: '6.4', torch: '2.8.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.10', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.11', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.12', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.13', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
 
 
       fail-fast: false
