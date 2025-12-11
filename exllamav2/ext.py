@@ -112,7 +112,7 @@ except ImportError as e:
         print("\"undefined symbol\" error here usually means you are attempting to load a prebuilt extension wheel "
               "that was compiled against a different version of PyTorch than the one you are you using. Please verify "
               "that the versions match.")
-        raise e
+    raise e
 
 if build_jit:
 
