@@ -39,6 +39,17 @@ jobs:
          - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.12', cuda: '',       rocm: '6.3', torch: '2.7.0', cudaarch: ''                                    }
          - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.13', cuda: '',       rocm: '6.3', torch: '2.7.0', cudaarch: ''                                    }
 
+        # ROCm 6.4 + Torch 2.8
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.10', cuda: '',       rocm: '6.4', torch: '2.8.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.11', cuda: '',       rocm: '6.4', torch: '2.8.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.12', cuda: '',       rocm: '6.4', torch: '2.8.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.13', cuda: '',       rocm: '6.4', torch: '2.8.0', cudaarch: ''                                    }
+
+        # ROCm 6.4 + Torch 2.9
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.10', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.11', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.12', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.13', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
 
       fail-fast: false
 
@@ -98,7 +109,11 @@ jobs:
 
           [ ! -d /etc/apt/keyrings ] && sudo mkdir --parents --mode=0755 /etc/apt/keyrings
           wget https://repo.radeon.com/rocm/rocm.gpg.key -O - | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
-          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/$ROCM_VERSION focal main" | sudo tee --append /etc/apt/sources.list.d/rocm.list
+
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/amdgpu/$ROCM_VERSION/ubuntu jammy main" | sudo tee --append /etc/apt/sources.list.d/amdgpu.list
+
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/$ROCM_VERSION jammy main" | sudo tee --append /etc/apt/sources.list.d/rocm.list
+
           echo -e 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600
           
           sudo apt update
@@ -113,7 +128,7 @@ jobs:
           # --- Install dependencies
 
           uv pip install torch==${{ matrix.torch }} --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
-          uv pip install --upgrade build setuptools==69.5.1 wheel packaging ninja safetensors sentencepiece tokenizers numpy
+          uv pip install --upgrade build setuptools==69.5.1 wheel packaging ninja safetensors tokenizers numpy
 
           # --- Build wheel 
 
