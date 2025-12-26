@@ -309,17 +309,16 @@ jobs:
         if: matrix.cuda == '' && matrix.rocm == ''
         run: |
           # --- Install dependencies
-          if ($IsWindows) {
-            uv pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cpu
-          } else {
-            uv pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cpu
-          }
+          uv pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cpu
           uv pip install --upgrade build setuptools==69.5.1 wheel packaging ninja safetensors sentencepiece tokenizers numpy
 
           # --- Build wheel (Mac) or sdist (Linux)
           if ($IsMacOS) {
+            # Mac doesn't support CUDA - use JIT compilation (no precompile)
+            $env:EXLLAMA_NOCOMPILE=1
             python -m build -n --wheel
           } else {
+            # Linux sdist build
             $env:EXLLAMA_NOCOMPILE=1
             python -m build -n
           }
