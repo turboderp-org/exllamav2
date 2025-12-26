@@ -307,20 +307,19 @@ jobs:
 
       - name: Build sdist or Mac wheel
         if: matrix.cuda == '' && matrix.rocm == ''
+        env:
+          EXLLAMA_NOCOMPILE: 1
         run: |
           # --- Install dependencies
-          if ($IsWindows) {
-            uv pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cpu
-          } else {
-            uv pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cpu
-          }
+          uv pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cpu
           uv pip install --upgrade build setuptools==69.5.1 wheel packaging ninja safetensors sentencepiece tokenizers numpy
 
           # --- Build wheel (Mac) or sdist (Linux)
           if ($IsMacOS) {
+            # Mac doesn't support CUDA - use JIT compilation (no precompile)
             python -m build -n --wheel
           } else {
-            $env:EXLLAMA_NOCOMPILE=1
+            # Linux sdist build
             python -m build -n
           }
         shell: pwsh
