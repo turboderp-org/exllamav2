@@ -324,7 +324,17 @@ jobs:
           }
         shell: pwsh
 
-      # Upload files
+      # Upload artifacts (always save wheels, even if not releasing)
+      
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-py${{ matrix.pyver }}-${{ matrix.cuda }}-torch${{ matrix.torch }}
+          path: dist/*.whl
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Upload files to GitHub release
 
       - name: Upload files to GitHub release
         if: steps.package_version.outputs.PACKAGE_VERSION != 'None' && inputs.release == '1'
