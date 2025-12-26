@@ -1,0 +1,125 @@
+name: Build Wheels & Release ROCm latest torch
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Release? 1 = yes, 0 = no'
+        default: '0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build_wheels:
+    name: ${{ matrix.os }} P${{ matrix.pyver }} C${{ matrix.cuda }} R${{ matrix.rocm }} T${{ matrix.torch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+
+        # Ubuntu 22.04 CUDA
+
+        # ROCm 6.4
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.10', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.11', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.12', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+         - { artname: 'wheel', os: ubuntu-22.04-l, pyver: '3.13', cuda: '',       rocm: '6.4', torch: '2.9.0', cudaarch: ''                                    }
+
+
+      fail-fast: false
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      # Free disk space
+
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        if: runner.os == 'Linux'
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: true
+
+      - uses: actions/checkout@v4
+
+      # Get version string from package
+
+      - name: Get version string
+        id: package_version
+        run: | 
+          $versionString = Get-Content $(Join-Path 'exllamav2' 'version.py') -raw
+          if ($versionString -match '__version__ = "(\d+\.(?:\d+\.?(?:dev\d+)?)*)"') 
+          {
+            Write-Output $('::notice file=build-wheels-release.yml,line=200,title=Package Version::Detected package version is: {0}' -f $Matches[1])
+            Write-Output "PACKAGE_VERSION=$($Matches[1])" >> "$env:GITHUB_OUTPUT"
+          }
+          else
+          {
+            Write-Output '::error file=build-wheels-release.yml,line=203::Could not parse version from exllamav2/version.py! You must upload wheels manually!'
+            Write-Output "PACKAGE_VERSION=None" >> "$env:GITHUB_OUTPUT"
+          }
+
+      # Install uv for easier python setup
+      - name: Install the latest version of uv and set the python version
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.pyver }}
+
+      # Install ROCm SDK, apparently needs to happen before setting up Python
+
+      - name: Build for ROCm
+        if: matrix.rocm != ''
+        shell: bash
+        run: |
+          # --- Install ROCm SDK
+
+          export ROCM_VERSION=${{ matrix.rocm }}
+          export TORCH_VERSION=${{ matrix.torch }}
+
+          [ ! -d /etc/apt/keyrings ] && sudo mkdir --parents --mode=0755 /etc/apt/keyrings
+          wget https://repo.radeon.com/rocm/rocm.gpg.key -O - | gpg --dearmor | sudo tee /etc/apt/keyrings/rocm.gpg > /dev/null
+
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/amdgpu/$ROCM_VERSION/ubuntu jammy main" | sudo tee --append /etc/apt/sources.list.d/amdgpu.list
+
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/$ROCM_VERSION jammy main" | sudo tee --append /etc/apt/sources.list.d/rocm.list
+
+          echo -e 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600
+          
+          sudo apt update
+          sudo apt install rocm-hip-sdk -y
+          sudo apt clean -y
+
+          echo "/opt/rocm/bin" >> $GITHUB_PATH
+          echo "ROCM_PATH=/opt/rocm" >> $GITHUB_ENV
+          echo "ROCM_VERSION=$ROCM_VERSION" >> $GITHUB_ENV
+          echo "USE_ROCM=1" >> $GITHUB_ENV
+
+          # --- Install dependencies
+
+          uv pip install torch==${{ matrix.torch }} --index-url="https://download.pytorch.org/whl/rocm$ROCM_VERSION"
+          uv pip install --upgrade build setuptools==69.5.1 wheel packaging ninja safetensors tokenizers numpy
+
+          # --- Build wheel 
+
+          python3 -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=+rocm${{ matrix.rocm }}-torch${{ matrix.torch }}"
+
+      # Upload files
+
+      - name: Upload files to GitHub release
+        if: steps.package_version.outputs.PACKAGE_VERSION != 'None' && inputs.release == '1'
+        uses: svenstaro/upload-release-action@2.6.1
+        with:
+          file: ./dist/*.whl
+          tag: ${{ format('v{0}', steps.package_version.outputs.PACKAGE_VERSION) }}
+          file_glob: true
+          overwrite: true
+          release_name: ${{ steps.package_version.outputs.PACKAGE_VERSION }}
