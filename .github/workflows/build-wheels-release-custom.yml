@@ -24,6 +24,10 @@ jobs:
         include:
           # windows-2022 P3.12 C12.1.0 R T2.4.0
           - { artname: 'wheel', os: windows-2022, pyver: '3.12', cuda: '12.1.0', rocm: '', torch: '2.4.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+          # ubuntu-22.04 P3.12 C12.1.0 R T2.4.0
+          - { artname: 'wheel', os: ubuntu-22.04, pyver: '3.12', cuda: '12.1.0', rocm: '', torch: '2.4.0', cudaarch: '6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX' }
+          # macos-14 P3.12 (no CUDA on Mac)
+          - { artname: 'wheel', os: macos-14, pyver: '3.12', cuda: '', rocm: '', torch: '2.4.0', cudaarch: '' }
 
       fail-fast: false
 
@@ -270,7 +274,9 @@ jobs:
         if: matrix.cuda != ''
         id: cuda_deps
         run: |
-          git config --system core.longpaths true
+          if ($IsWindows) {
+            git config --system core.longpaths true
+          }
           $cudaVersion = '${{ matrix.cuda }}'
           $cudaVersionPytorch = '${{ matrix.cuda }}'.Remove('${{ matrix.cuda }}'.LastIndexOf('.')).Replace('.','')
           Write-Output "CUDA_VERSION_PYTORCH=$cudaVersionPytorch" >> "$env:GITHUB_OUTPUT"
@@ -278,11 +284,12 @@ jobs:
 
           uv pip install torch==${{ matrix.torch }} --index-url $pytorchIndexUrl
           uv pip install --upgrade build setuptools==69.5.1 wheel packaging ninja safetensors sentencepiece tokenizers numpy
+        shell: pwsh
 
       - name: Build for CUDA
         if: matrix.cuda != ''
         run: |
-          # --- Spawn the VS shell
+          # --- Spawn the VS shell (Windows only)
           if ($IsWindows) {
             Import-Module 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\Microsoft.VisualStudio.DevShell.dll'
             Enter-VsDevShell -VsInstallPath 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools' -DevCmdArguments '-arch=x64 -host_arch=x64'
@@ -294,21 +301,29 @@ jobs:
           $env:BUILD_TARGET = "cuda"
           $env:TORCH_CUDA_ARCH_LIST = '${{ matrix.cudaarch }}'
           python -m build -n --wheel -C--build-option=egg_info "-C--build-option=--tag-build=$BUILDTAG"
+        shell: pwsh
 
       # Build sdist
 
-      - name: Build sdist
+      - name: Build sdist or Mac wheel
         if: matrix.cuda == '' && matrix.rocm == ''
         run: |
           # --- Install dependencies
-
-          uv pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cpu
+          if ($IsWindows) {
+            uv pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cpu
+          } else {
+            uv pip install torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cpu
+          }
           uv pip install --upgrade build setuptools==69.5.1 wheel packaging ninja safetensors sentencepiece tokenizers numpy
 
-          # --- Build wheel
-           
-          $env:EXLLAMA_NOCOMPILE=1
-          python -m build -n
+          # --- Build wheel (Mac) or sdist (Linux)
+          if ($IsMacOS) {
+            python -m build -n --wheel
+          } else {
+            $env:EXLLAMA_NOCOMPILE=1
+            python -m build -n
+          }
+        shell: pwsh
 
       # Upload files
 
