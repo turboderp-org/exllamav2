@@ -38,7 +38,7 @@ void apply_rep_penalty_cpu
 //    {
 //        if (g_rep_mask) free(g_rep_mask);
 //        g_vocab_size = vocab_size;
-//        g_rep_mask = (bool*) malloc(g_vocab_size * sizeof(bool));
+//        g_rep_mask = (bool*) calloc(1, g_vocab_size * sizeof(bool));
 //    }
 //    memset(g_rep_mask, 0, g_vocab_size * sizeof(bool));
     bool* g_rep_mask = (bool*) calloc(vocab_size, sizeof(bool));
@@ -655,7 +655,7 @@ int tfs_cpu
 
     int nc = sort_descending(num_candidates, temp_probs, temp_indices, num_candidates);
 
-    float* derivative = (float*) malloc(nc * sizeof(float));
+    float* derivative = (float*) calloc(1, nc * sizeof(float));
     float dsum = 0.0f;
     for (int i = 0; i < nc - 2; i++)
     {
@@ -759,9 +759,9 @@ int typical_cpu
 
     int r_candidates = pre_sort_descending(num_candidates, temp_probs, temp_indices);
 
-    float* temp = (float*) malloc(r_candidates * sizeof(float));
-    int* entropy_dev_order = (int*) malloc(r_candidates * sizeof(int));
-    int* temp_indices_2 = (int*) malloc(r_candidates * sizeof(int));
+    float* temp = (float*) calloc(1, r_candidates * sizeof(float));
+    int* entropy_dev_order = (int*) calloc(1, r_candidates * sizeof(int));
+    int* temp_indices_2 = (int*) calloc(1, r_candidates * sizeof(int));
 
     float neg_entropy = 0.0f;
     for (int i = 0; i < r_candidates; i++)
