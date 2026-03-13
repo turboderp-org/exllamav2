@@ -327,6 +327,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         assert input_ids.shape[0] <= 2, "Streaming generator does not support batch size > 1"
         if input_ids.shape[0] == 2:
             assert gen_settings.cfg_scale is not None, "No CFG scale set"
+        self.input_ids = input_ids
 
         self.position_offsets = position_offsets
         self.input_mask = input_mask
@@ -500,7 +501,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         if self.return_logits:
             ret.append(logits)
-        
+
         return tuple(ret)
 
 
@@ -819,6 +820,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(
                 logits,
                 gen_settings,
+                self.input_ids,
                 self.sequence_ids[:1, :],
                 random.random(),
                 self.tokenizer,
@@ -854,12 +856,12 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
             for f in self.filters: f.feed(token)
 
         # Accept token
-        
+
         if self.sequence_ids.shape[0] > 1 and token.shape[0] == 1:
             self.sequence_ids = torch.cat([self.sequence_ids, token.repeat(self.sequence_ids.shape[0], 1)], dim = 1)
         else:
             self.sequence_ids = torch.cat([self.sequence_ids, token], dim = 1)
-        
+
         return token, ptokens, pprobs, prob, eos, logits.flatten(1), dev_logits
 
 
@@ -881,7 +883,15 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
                                                   self.draft_cache,
                                                   input_mask = self.input_mask,
                                                   position_offsets = self.position_offsets).float().cpu()
-                token, _, _, prob, _ = ExLlamaV2Sampler.sample(logits, draft_gen_settings, draft_sequence_ids, random.random(), self.tokenizer, prefix_token if k == 0 else None)
+                token, _, _, prob, _ = ExLlamaV2Sampler.sample(
+                    logits,
+                    draft_gen_settings,
+                    self.input_ids,
+                    draft_sequence_ids,
+                    random.random(),
+                    self.tokenizer,
+                    prefix_token if k == 0 else None
+                )
 
                 if prob < self.speculative_prob_threshold:
                     self.draft_cache.current_seq_len -= 1
@@ -918,6 +928,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(
             logits,
             gen_settings,
+            self.input_ids,
             self.sequence_ids[:1, :], random.random(),
             self.tokenizer,
             prefix_token,
@@ -980,6 +991,7 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
         token, ptokens, pprobs, prob, eos = ExLlamaV2Sampler.sample(
             logits,
             gen_settings,
+            self.input_ids,
             self.sequence_ids[:1, :],
             random.random(),
             self.tokenizer,
@@ -1038,5 +1050,3 @@ class ExLlamaV2StreamingGenerator(ExLlamaV2BaseGenerator):
 
         self.ngram_preloaded = NgramCache(self.speculative_ngram_min, self.speculative_ngram_max, None)
         self.ngram_preloaded.update(input_ids)
-
-

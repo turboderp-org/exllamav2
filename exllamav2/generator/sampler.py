@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+from typing import Optional, Callable
 import torch
 import torch.nn.functional as F
 from exllamav2 import ExLlamaV2Tokenizer
@@ -70,6 +71,8 @@ class ExLlamaV2Sampler:
         tfs: float = 0
         typical: float = 0
         skew: float = 0
+
+        logits_processor: Optional[Callable] = None
 
         temperature_last: bool = False
 
@@ -308,6 +311,7 @@ class ExLlamaV2Sampler:
     def sample(
         logits: torch.tensor,
         settings: Settings,
+        input_ids: torch.tensor,
         sequence_ids: torch.tensor,
         random: float,
         tokenizer: ExLlamaV2Tokenizer,
@@ -327,6 +331,9 @@ class ExLlamaV2Sampler:
 
         :param settings:
             ExLlamaV2Sampler.Settings
+
+        :param input_ids:
+            The prompt portion of sequence_ids, shape (batch_size, seq_len)
 
         :param sequence_ids:
             Past token IDs to consider for repetition penalty etc., shape (batch_size, seq_len)
@@ -392,6 +399,16 @@ class ExLlamaV2Sampler:
             logits = settings.cfg_scale * logits[0] + (1 - settings.cfg_scale) * logits[1]
             logits = logits.unsqueeze(0)
             batch_size = 1
+
+        # Apply logits processor
+
+        if settings.logits_processor:
+            generated_ids = sequence_ids[:, input_ids.shape[-1]:]
+            # normalize to 2d
+            logits_2d = logits.view(-1, logits.shape[-1])
+            generated_ids_2d = generated_ids.view(logits_2d.shape[0], generated_ids.shape[-1])
+            # process logits and convert back to original logits shape
+            logits = settings.logits_processor(generated_ids_2d, logits_2d).view(logits.shape)
 
         # Prepare filter
 
