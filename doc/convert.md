@@ -62,7 +62,7 @@ is 2048.
 - **-b / --bits *float***: Target average number of bits per weight.
   
 
-- **-hb / --bits *int***: Number of bits for the lm_head (output) layer of the model. Default is 6, although that
+- **-hb / --head_bits *int***: Number of bits for the lm_head (output) layer of the model. Default is 6, although that
 value actually results in a mixed-precision quantization of about 6.3 bits. Options are 2, 3, 4, 5, 6 and 8. (Only 6
 and 8 appear to be useful.)
 

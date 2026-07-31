@@ -17,7 +17,7 @@ excessive for most benchmarks.
 
 - **-nfa / --no_flash_attn**: Don't use flash-attn.
 
-- **-nxf / --no_transformers**: Don't use xformers.
+- **-nxf / --no_xformers**: Don't use xformers.
 
 - **-fst / --fast_safetensors**: Use alternative loading mode. On Linux, this mode uses direct I/O and pinned
 buffers and can potentially load faster from very fast NVMe RAID arrays with a cold cache. On Windows, this
