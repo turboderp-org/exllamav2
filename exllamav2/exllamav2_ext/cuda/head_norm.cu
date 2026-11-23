@@ -3,8 +3,14 @@
 #include "compat.cuh"
 
 #define MAX_HEAD_DIM 256
+#if defined(USE_ROCM)
+#define WARP_SIZE (warpSize)
+#define FULL_MASK 0xffffffffffffffffULL
+#else
 #define WARP_SIZE 32
-#define MAX_WARPS (MAX_HEAD_DIM / WARP_SIZE)
+#define FULL_MASK 0xffffffffu
+#endif
+#define MAX_WARPS (MAX_HEAD_DIM / 32)
 
 __global__ void head_norm_kernel
 (
@@ -22,7 +28,7 @@ __global__ void head_norm_kernel
 {
     int warp_id = threadIdx.x / WARP_SIZE;
     int lane_id = threadIdx.x % WARP_SIZE;
-    int num_warps = DIVIDE(head_dim, 64);
+    int num_warps = DIVIDE(head_dim, 2 * WARP_SIZE);
 
     int t = threadIdx.x;
     const half* x_ptr = x + num_heads * head_dim * blockIdx.y + head_dim * blockIdx.x;
@@ -54,7 +60,7 @@ __global__ void head_norm_kernel
 
         // Shuffle to sum across lanes
 
-        for(int offset = warpSize / 2; offset > 0; offset /= 2) sum += __shfl_xor_sync(0xffffffff, sum, offset);
+        for(int offset = warpSize / 2; offset > 0; offset /= 2) sum += __shfl_xor_sync(FULL_MASK, sum, offset);
         if (lane_id == 0) sums[warp_id] = sum;
         __syncthreads();
 
@@ -93,7 +99,7 @@ __global__ void head_norm_kernel
 
         // Shuffle to sum across lanes
 
-        for(int offset = warpSize / 2; offset > 0; offset /= 2) sum += __shfl_xor_sync(0xffffffff, sum, offset);
+        for(int offset = warpSize / 2; offset > 0; offset /= 2) sum += __shfl_xor_sync(FULL_MASK, sum, offset);
         if (lane_id == 0) sums[warp_id] = sum;
         __syncthreads();
 
@@ -116,7 +122,7 @@ __global__ void head_norm_kernel
 
         // Shuffle to sum across lanes
 
-        for(int offset = warpSize / 2; offset > 0; offset /= 2) sum += __shfl_xor_sync(0xffffffff, sum, offset);
+        for(int offset = warpSize / 2; offset > 0; offset /= 2) sum += __shfl_xor_sync(FULL_MASK, sum, offset);
         if (lane_id == 0) sums[warp_id] = sum;
         __syncthreads();
 
